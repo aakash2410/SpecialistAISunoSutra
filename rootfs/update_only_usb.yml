@@ -1,0 +1,5 @@
+---
+- hosts: usb
+  roles:
+    - { role: app, tags: ['initial'] }
+    - { role: specialist, tags: ['initial'] }

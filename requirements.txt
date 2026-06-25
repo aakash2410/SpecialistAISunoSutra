@@ -1,0 +1,14 @@
+# Specialist v1 dependencies.
+#
+# Minimum (laptop demo + ingestion with the hashing fallback embedder):
+numpy
+
+# Recommended (real Indic-capable on-device embedding model for retrieval).
+# Install these to build/run with the production embedder:
+sentence-transformers>=2.2.0
+
+# On the Suno Sutra device, the platform already provides ollama, requests,
+# vosk, opencv-python, pyaudio, etc. via python/requirements.txt — they are not
+# repeated here. `requests` is only needed if you call BHASHINI MT/TTS from the
+# laptop demo:
+requests

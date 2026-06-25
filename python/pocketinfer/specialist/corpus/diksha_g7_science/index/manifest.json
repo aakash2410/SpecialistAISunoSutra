@@ -1,0 +1,12 @@
+{
+  "embedder": "intfloat/multilingual-e5-small",
+  "embedder_backend": "tfidf",
+  "dim": 224,
+  "num_chunks": 10,
+  "num_documents": 10,
+  "chunk_max_words": 120,
+  "chunk_overlap": 25,
+  "recommended_min_score": 0.1,
+  "built_at": "2026-06-25T06:04:39.899175+00:00",
+  "corpus": "diksha_g7_science"
+}

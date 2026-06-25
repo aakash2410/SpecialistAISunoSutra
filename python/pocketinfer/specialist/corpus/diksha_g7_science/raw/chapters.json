@@ -1,0 +1,85 @@
+{
+  "collection": {
+    "name": "DIKSHA Grade 7 Science (NCERT) — starter slice",
+    "board": "CBSE",
+    "medium": "English",
+    "gradeLevel": "Class 7",
+    "subject": "Science",
+    "license": "CC-BY-4.0 (verify per-asset before redistribution)",
+    "source": "https://diksha.gov.in/",
+    "harvested_at": "2026-06-25",
+    "note": "Demonstration slice. Text is paraphrased NCERT-style content used to exercise the offline retrieval + grounding loop. Replace raw/ with a real DIKSHA harvest before deployment and re-run ingest/build_index.py."
+  },
+  "documents": [
+    {
+      "content_id": "do_31309878131234",
+      "chapter": "Chapter 1 — Nutrition in Plants",
+      "section": "1.1 Mode of Nutrition in Plants",
+      "page": 1,
+      "text": "All organisms need food to survive. Plants are the only organisms that can make their own food. The way an organism takes in and uses food is called its mode of nutrition. Organisms that make their own food, like green plants, are called autotrophs. Organisms that take food from other plants or animals are called heterotrophs."
+    },
+    {
+      "content_id": "do_31309878131235",
+      "chapter": "Chapter 1 — Nutrition in Plants",
+      "section": "1.2 Photosynthesis — Food Making Process in Plants",
+      "page": 2,
+      "text": "Photosynthesis is the process by which green plants make their own food. Leaves are the food factories of plants. They contain a green pigment called chlorophyll, which traps energy from sunlight. In the presence of sunlight, the green leaves use carbon dioxide from the air and water from the soil to make a carbohydrate called glucose. Oxygen is released during this process. Because photosynthesis needs sunlight, chlorophyll, carbon dioxide and water, it can only happen in the green parts of a plant, mainly the leaves."
+    },
+    {
+      "content_id": "do_31309878131236",
+      "chapter": "Chapter 1 — Nutrition in Plants",
+      "section": "1.2 Photosynthesis — Word Equation",
+      "page": 3,
+      "text": "The process of photosynthesis can be written as a word equation. Carbon dioxide and water, in the presence of sunlight and chlorophyll, are converted into carbohydrates (glucose) and oxygen. The carbohydrates are used by the plant for energy and growth, and the extra food is stored as starch. The oxygen released is used by all living organisms for breathing."
+    },
+    {
+      "content_id": "do_31309878131237",
+      "chapter": "Chapter 1 — Nutrition in Plants",
+      "section": "1.5 How Nutrients are Replenished in the Soil",
+      "page": 6,
+      "text": "Plants take up mineral nutrients such as nitrogen from the soil. Farmers add fertilisers and manure to replenish these nutrients. Certain bacteria called Rhizobium, which live in the root nodules of leguminous plants like peas and beans, can fix nitrogen from the air and make it available to the plant. This is why farmers grow legumes to keep the soil fertile."
+    },
+    {
+      "content_id": "do_31309878141001",
+      "chapter": "Chapter 2 — Nutrition in Animals",
+      "section": "2.2 The Human Digestive System",
+      "page": 12,
+      "text": "The human digestive system is a long tube called the alimentary canal that runs from the mouth to the anus. It includes the mouth, food pipe (oesophagus), stomach, small intestine and large intestine. Digestion begins in the mouth where teeth break food into small pieces and saliva starts breaking down starch. The digested food is absorbed into the blood through the walls of the small intestine."
+    },
+    {
+      "content_id": "do_31309878151002",
+      "chapter": "Chapter 4 — Heat",
+      "section": "4.2 Transfer of Heat",
+      "page": 24,
+      "text": "Heat flows from a hotter object to a colder object. There are three ways in which heat is transferred: conduction, convection and radiation. In conduction, heat passes through a solid without the solid itself moving. In convection, heat is carried by the movement of a liquid or gas. In radiation, heat travels as rays and does not need any medium; this is how heat from the Sun reaches us."
+    },
+    {
+      "content_id": "do_31309878161003",
+      "chapter": "Chapter 6 — Physical and Chemical Changes",
+      "section": "6.2 Chemical Changes",
+      "page": 36,
+      "text": "A change in which one or more new substances are formed is called a chemical change. Rusting of iron is a chemical change in which iron reacts with oxygen and moisture in the air to form a reddish-brown substance called rust. Chemical changes are usually permanent and cannot be easily reversed. The burning of a candle and the souring of milk are other examples of chemical changes."
+    },
+    {
+      "content_id": "do_31309878171004",
+      "chapter": "Chapter 10 — Respiration in Organisms",
+      "section": "10.1 Why Do We Respire?",
+      "page": 60,
+      "text": "All living organisms respire to get energy from food. During respiration, glucose breaks down in the cells using oxygen to release energy, carbon dioxide and water. Breathing is the part of respiration in which we take in oxygen-rich air and breathe out air rich in carbon dioxide. Respiration happens in every cell of the body, all the time."
+    },
+    {
+      "content_id": "do_31309878181005",
+      "chapter": "Chapter 13 — Motion and Time",
+      "section": "13.3 Speed",
+      "page": 78,
+      "text": "The distance covered by an object in a unit of time is called its speed. Speed is calculated by dividing the distance travelled by the time taken. The basic unit of speed is metre per second. An object that covers equal distances in equal intervals of time is said to move with uniform speed."
+    },
+    {
+      "content_id": "do_31309878191006",
+      "chapter": "Chapter 15 — Light",
+      "section": "15.2 Reflection of Light",
+      "page": 90,
+      "text": "When light falls on a polished or shiny surface like a mirror, it bounces back. This bouncing back of light is called reflection. A plane mirror forms an image that is erect, of the same size as the object, and laterally inverted, meaning the left side appears as the right side. The image in a plane mirror is virtual and appears to be behind the mirror."
+    }
+  ]
+}
