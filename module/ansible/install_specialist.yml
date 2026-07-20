@@ -1,0 +1,21 @@
+---
+# Install The Specialist module onto a device that already has the Suno Sutra base.
+#
+#   ansible-playbook -i inventory.ini install_specialist.yml
+#
+# This playbook is standalone — it does NOT modify the base platform's
+# install_all_usb.yml / update_only_usb.yml, so the base repo stays pristine.
+#
+# Useful overrides:
+#   -e specialist_exec_path=/usr/local/bin/pocketinfer-service
+#   -e specialist_pip_executable=pip3
+#   -e specialist_set_default_app=false
+#   -e specialist_corpus_dir=/opt/specialist/corpus
+#
+# Tags: code | content | deps | service | verify
+#   ansible-playbook -i inventory.ini install_specialist.yml --tags content
+#   (content-only = refresh the syllabus without touching code)
+
+- hosts: usb
+  roles:
+    - { role: specialist, tags: ['specialist'] }

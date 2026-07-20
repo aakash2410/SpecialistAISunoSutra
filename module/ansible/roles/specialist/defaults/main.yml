@@ -1,0 +1,36 @@
+---
+# The Specialist module — deployment variables.
+# Override any of these with -e on the ansible-playbook command line.
+
+# Where the Suno Sutra base platform already lives on the device.
+specialist_device_root: /home/ubuntu/pocket-infer-sw
+specialist_pkg_dir: "{{ specialist_device_root }}/python/pocketinfer"
+
+# Content lives separately from code so the syllabus can be refreshed
+# without redeploying the module.
+specialist_corpus_dir: /opt/specialist/corpus
+specialist_corpus_owner: ubuntu
+
+# IMPORTANT — confirm with the hardware team which environment the service
+# actually runs from. The base systemd unit points at the venv, but the base
+# Ansible role pip-installs system-wide. These two must agree, or the app will
+# import-fail on boot.
+#
+#   venv (matches the base pocketinfer.service unit):
+specialist_exec_path: "{{ specialist_device_root }}/python/venv/bin/pocketinfer-service"
+specialist_pip_executable: "{{ specialist_device_root }}/python/venv/bin/pip"
+#   system-wide (matches the base `app` Ansible role) — swap to these if that's
+#   what your devices use:
+# specialist_exec_path: /usr/local/bin/pocketinfer-service
+# specialist_pip_executable: pip3
+
+# Make the device boot into The Specialist via a systemd drop-in (additive —
+# the base unit file is never edited). Set false to leave app selection manual.
+specialist_set_default_app: true
+
+# Pre-download the embedding model so run time stays fully offline.
+specialist_embed_model: intfloat/multilingual-e5-small
+specialist_prefetch_embed_model: true
+
+# Restart the service at the end so the new app takes effect.
+specialist_restart_service: true

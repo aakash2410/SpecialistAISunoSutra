@@ -80,8 +80,7 @@ def main():
 
     if args.mode == "local":
         raw = args.raw or os.path.join(
-            os.path.dirname(__file__), "..", "python", "pocketinfer", "specialist",
-            "corpus", "diksha_g7_science", "raw", "chapters.json"
+            os.path.dirname(__file__), "..", "corpus", "diksha_g7_science", "raw", "chapters.json"
         )
         docs = load_local(os.path.abspath(raw))
     else:

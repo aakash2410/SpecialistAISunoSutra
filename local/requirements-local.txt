@@ -1,0 +1,19 @@
+# Laptop harness dependencies (for running the voice loop off-device).
+# Install with:  pip install -r local/requirements-local.txt
+#
+# Core (already needed by the demo/engine):
+numpy
+
+# Live microphone capture:
+sounddevice
+
+# Offline speech-to-text (Vosk). After installing, download a small model:
+#   mkdir -p local/models && cd local/models
+#   curl -LO https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+#   unzip vosk-model-small-en-us-0.15.zip
+# (Hindi: vosk-model-small-hi-0.22.zip)
+vosk
+
+# TTS on macOS uses the built-in `say` command — no package needed.
+# Optional: a real grounded LLM instead of the extractive fallback needs ollama
+# running locally (pip package 'ollama' is already in python/requirements.txt).

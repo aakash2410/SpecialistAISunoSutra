@@ -1,0 +1,12 @@
+# The Specialist module — its OWN dependencies.
+# Kept separate from the base platform's python/requirements.txt so the base
+# stays pristine and upstream-updatable.
+
+# Vector maths for retrieval (usually already present via the base install).
+numpy
+
+# On-device, Indic-capable embedding model for retrieval.
+# Installs against the torch that ships in the JetPack SDK base image.
+# If unavailable, the embedder transparently falls back to a built-in TF-IDF
+# model, so the device still functions (with lower retrieval quality).
+sentence-transformers

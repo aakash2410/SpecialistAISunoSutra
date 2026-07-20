@@ -1,0 +1,12 @@
+# Managed by the Specialist module — do not edit by hand.
+#
+# Makes the device boot into The Specialist without modifying the base
+# pocketinfer.service unit (additive, so the platform stays upstream-updatable).
+# Remove this file and `systemctl daemon-reload` to revert.
+#
+# The empty ExecStart= is required: systemd needs the inherited value cleared
+# before a replacement can be set.
+
+[Service]
+ExecStart=
+ExecStart={{ specialist_exec_path }} --app TheSpecialist

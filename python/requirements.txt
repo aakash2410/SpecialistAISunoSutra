@@ -5,11 +5,6 @@ numpy
 SpeechRecognition
 vosk
 piper-tts
-# The Specialist: on-device, Indic-capable embedding model for retrieval.
-# Uses the torch that ships in the JetPack SDK base image. If this is
-# unavailable, the embedder transparently falls back to a built-in TF-IDF
-# model, so the device still functions (with lower retrieval quality).
-sentence-transformers
 appdirs
 opencv-python
 psutil

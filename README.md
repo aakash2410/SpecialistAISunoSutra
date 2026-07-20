@@ -11,12 +11,15 @@ Every answer comes from **approved DIKSHA content**. When the corpus doesn't
 cover the question, the device **says so** instead of guessing. The whole answer
 loop runs **fully offline**.
 
-**This folder is a complete, self-contained, flashable bundle.** It contains the
-entire Suno Sutra platform (`rootfs/`, `python/`, `ioexpander/`, `assets/`) with
-The Specialist integrated into it as the default application — plus the
-off-device DIKSHA ingestion pipeline (`ingest/`) and a laptop demo (`demo.py`).
-You can provision it straight onto a Jetson; nothing outside this folder is
-required.
+**How this ships to hardware.** The device already has the Suno Sutra base
+platform, so The Specialist deploys as a **purely additive overlay module** —
+new files only, **no base file is modified or overwritten**. Build it with
+`./scripts/make_module.sh --tar` and hand `dist/specialist-module/` to the
+hardware team; see [module/README.md](module/README.md).
+
+The base platform is vendored here (`python/`, `rootfs/`, `ioexpander/`,
+`assets/`) purely so the laptop demo and voice loop can run against it — it is
+kept **byte-identical to upstream**.
 
 ---
 
@@ -45,42 +48,50 @@ python demo.py --ask "..." --lang hi              # translate answer (needs BHAS
 
 ---
 
-## Flashing it onto a Jetson
+## Deploying to a device (overlay module)
 
-The Specialist is the **default application**, so once provisioned the device
-boots straight into it.
+The device already has the Suno Sutra base, so we ship an **additive overlay**.
 
 1. **Bake the index with the production embedder** (off-device, online, once):
    ```bash
-   pip install -r python/requirements.txt        # installs sentence-transformers
+   pip install -r module/requirements-specialist.txt   # sentence-transformers
    python ingest/build_index.py --model intfloat/multilingual-e5-small
    ```
-   This embeds the corpus with the neural model and writes the index into
-   `python/pocketinfer/specialist/corpus/diksha_g7_science/index/`, where it
-   ships with the rest of the code.
 
-2. **Flash the base image** with NVIDIA SDK Manager, then **provision** over USB
-   (see [rootfs/Jetson_Flash.md](rootfs/Jetson_Flash.md) and
-   [rootfs/README.md](rootfs/README.md)):
+2. **Build the module:**
    ```bash
-   cd rootfs
-   ansible-playbook -i inventory.ini install_all_usb.yml
+   ./scripts/make_module.sh --tar
    ```
-   The playbook runs the platform roles plus the new **`specialist`** role:
-   `app` rsyncs `python/` (code **and** the baked corpus) to the device and
-   pip-installs it; `specialist` pre-fetches the embedding model so run time is
-   offline. To push code/corpus updates later: `ansible-playbook -i inventory.ini
-   update_only_usb.yml`.
+   Produces `dist/specialist-module/` (+ tarball) containing the payload, the
+   corpus, a standalone Ansible role, and a `MANIFEST.txt` listing exactly which
+   file lands where.
 
-3. **It boots into The Specialist.** The teacher holds the trigger, asks by voice
-   (or sets `input_mode` to `camera` to read a textbook page), and the device
-   answers aloud — grounded, cited, and offline. To run a different app or test
-   manually:
+3. **Install onto the device** (base must already be provisioned):
    ```bash
-   pocketinfer-service --list-apps
-   pocketinfer-service --app TheSpecialist
-   pocketinfer-service --app TheSpecialist --setting input_language=en --setting output_language=en
+   cd dist/specialist-module/ansible
+   cp inventory.ini.sample inventory.ini      # adjust for your device
+   ansible-playbook -i inventory.ini install_specialist.yml
    ```
+
+What lands where — **all new files, nothing overwritten**:
+
+| Component | On-device destination |
+|---|---|
+| `embed.py`, `ocr.py` | `{device_root}/python/pocketinfer/models/` |
+| `specialist/` runtime | `{device_root}/python/pocketinfer/specialist/` |
+| `specialist_app.py` | `{device_root}/python/pocketinfer/applications/` |
+| corpus + index (content) | `/opt/specialist/corpus/` |
+| boot-into-Specialist drop-in | `/etc/systemd/system/pocketinfer.service.d/` |
+
+Content sits **outside** the code tree, so the syllabus can be refreshed on its
+own: `ansible-playbook ... install_specialist.yml --tags content`.
+
+> **Confirm before installing:** the base platform is inconsistent about whether
+> the service runs from the **venv** (`pocketinfer.service` unit) or
+> **system python** (the base `app` role). The module's dependencies must land in
+> whichever one actually runs, or the app import-fails on boot. Defaults assume
+> the venv — override with `-e specialist_exec_path=... -e specialist_pip_executable=...`.
+> Details in [module/README.md](module/README.md).
 
 ---
 
@@ -120,41 +131,51 @@ window to refresh the corpus, like any other model or asset.
 
 ## Layout
 
+Files marked **NEW** are ours; everything else is the vendored upstream base,
+kept byte-identical.
+
 ```
-Specialist v1/                     ← self-contained, flashable bundle
+Specialist v1/
 ├── README.md                      ← this file (the product)
 ├── PLATFORM_README.md             ← the original Suno Sutra platform README
-├── demo.py                        ← run the loop on a laptop
+├── demo.py                        ← NEW  run the loop on a laptop (text)
 │
-├── ingest/                        ← OFF-DEVICE build-time pipeline
-│   ├── diksha_pull.py             ←   harvest a grade+subject slice (local | online)
-│   ├── chunk.py                   ←   split sections into overlapping passages
-│   └── build_index.py             ←   pull → chunk → embed → index
+├── corpus/                        ← NEW  CONTENT (deployed to /opt/specialist/corpus)
+│   └── diksha_g7_science/{raw,index}
 │
-├── python/                        ← the Suno Sutra python platform (+ Specialist)
-│   ├── requirements.txt           ←   + sentence-transformers
+├── ingest/                        ← NEW  OFF-DEVICE build-time pipeline
+│   ├── diksha_pull.py             ←        harvest a grade+subject slice
+│   ├── chunk.py                   ←        split sections into passages
+│   └── build_index.py             ←        pull → chunk → embed → index
+│
+├── local/                         ← NEW  laptop voice-loop harness
+│   ├── providers.py               ←        Vosk / say / no-op MT / BHASHINI backends
+│   ├── audio.py                   ←        mic capture, WAV, playback
+│   └── voice_loop.py              ←        ASR→MT→Specialist→MT→TTS runner
+│
+├── module/                        ← NEW  the device overlay (source of truth)
+│   ├── requirements-specialist.txt←        module's OWN deps (base untouched)
+│   └── ansible/                   ←        standalone role + install playbook
+│
+├── scripts/make_module.sh         ← NEW  exports dist/specialist-module/
+├── dist/                          ←      generated overlay (gitignored)
+│
+├── python/                        ←      vendored Suno Sutra base (pristine)
 │   └── pocketinfer/
-│       ├── service.py             ←   default app = TheSpecialist
 │       ├── models/
-│       │   ├── embed.py           ←   NEW embedding model (e5-small | TF-IDF fallback)
-│       │   ├── ocr.py             ←   NEW BHASHINI OCR (camera → text) wrapper
-│       │   └── asr.py / nmt.py / tts.py / ollama.py / vosk.py / piper.py   (reused)
-│       ├── specialist/            ←   NEW runtime subpackage
-│       │   ├── vector_index.py    ←     local vector search over the baked index
-│       │   ├── grounding.py       ←     grounded-prompt construction + refusal
-│       │   ├── pipeline.py        ←     SpecialistEngine: the board-agnostic loop
-│       │   ├── llm.py             ←     stock LLM → grounded chat client
-│       │   └── corpus/diksha_g7_science/{raw,index}   ← ships on device
+│       │   ├── embed.py           ← NEW    embedding model (e5-small | TF-IDF)
+│       │   ├── ocr.py             ← NEW    BHASHINI OCR (camera → text)
+│       │   └── asr.py / nmt.py / tts.py / ollama.py / vosk.py   (base, reused)
+│       ├── specialist/            ← NEW    runtime subpackage
+│       │   ├── vector_index.py    ←          local vector search
+│       │   ├── grounding.py       ←          grounded prompt + refusal
+│       │   ├── pipeline.py        ←          SpecialistEngine
+│       │   ├── providers.py       ←          swappable-component contracts
+│       │   └── llm.py             ←          stock LLM → grounded chat client
 │       └── applications/
-│           └── specialist_app.py  ←   NEW @RegisterApplication device app
+│           └── specialist_app.py  ← NEW    @RegisterApplication device app
 │
-├── rootfs/                        ← provisioning / flashing (Ansible)
-│   ├── install_all_usb.yml        ←   + the `specialist` role
-│   ├── update_only_usb.yml        ←   + the `specialist` role
-│   ├── Jetson_Flash.md            ←   step-by-step flashing guide
-│   └── roles/specialist/          ←   NEW role: pre-fetch embedder, verify index
-│
-├── ioexpander/   assets/          ← reused platform firmware & images
+├── rootfs/  ioexpander/  assets/  ←      vendored base (pristine, untouched)
 ```
 
 ### What's reused vs. new
@@ -165,7 +186,7 @@ Specialist v1/                     ← self-contained, flashable bundle
 | Stock quantised LLM via the `Ollama` wrapper        | Local vector search (`specialist/vector_index.py`) |
 | Board HAL, audio, UI, application/registry/service  | OCR capture wrapper (`models/ocr.py`) |
 | `hear_the_world` app structure (template)           | Grounding + refusal (`specialist/grounding.py`) |
-| `rootfs` roles + flashing pipeline                  | Offline engine (`specialist/pipeline.py`), `specialist` role, DIKSHA ingestion (`ingest/`) |
+| `rootfs` roles + flashing pipeline (unmodified)     | Offline engine (`specialist/pipeline.py`), overlay module (`module/`), DIKSHA ingestion (`ingest/`), laptop harness (`local/`) |
 
 The LLM is **grounded at inference time** purely through the system/user prompts
 — no fine-tuning, no retraining, as the spec requires.

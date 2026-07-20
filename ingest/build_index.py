@@ -97,7 +97,7 @@ def build(corpus_dir: str, model_name: str, prefer: str, max_words: int, overlap
 def main():
     ap = argparse.ArgumentParser(description="Bake a DIKSHA vector index (build time).")
     ap.add_argument("--corpus", default=os.path.join(
-        os.path.dirname(__file__), "..", "python", "pocketinfer", "specialist", "corpus", "diksha_g7_science"))
+        os.path.dirname(__file__), "..", "corpus", "diksha_g7_science"))
     ap.add_argument("--model", default=DEFAULT_MODEL_NAME)
     ap.add_argument("--prefer", choices=["auto", "sentence-transformers", "hashing"], default="auto")
     ap.add_argument("--max-words", type=int, default=120)

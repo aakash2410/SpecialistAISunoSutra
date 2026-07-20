@@ -38,10 +38,12 @@ from pocketinfer.audio import AudioPlayer
 from pocketinfer.specialist import SpecialistEngine
 from pocketinfer.specialist.llm import ollama_grounded_client
 
-# The baked DIKSHA index ships inside the package (pocketinfer/specialist/corpus),
-# so it travels to the device with the rest of the python tree.
-DEFAULT_INDEX = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "specialist", "corpus", "diksha_g7_science", "index")
+# Content lives in a data directory separate from the code, so the syllabus can be
+# refreshed without redeploying the module. Override per-device with:
+#   pocketinfer-service --setting index_dir=/path/to/index
+DEFAULT_INDEX = os.environ.get(
+    "SPECIALIST_INDEX_DIR",
+    "/opt/specialist/corpus/diksha_g7_science/index",
 )
 
 

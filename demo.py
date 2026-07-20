@@ -26,8 +26,7 @@ sys.path.insert(0, os.path.join(os.path.abspath(os.path.dirname(__file__)), "pyt
 from pocketinfer.specialist import SpecialistEngine  # noqa: E402
 
 DEFAULT_INDEX = os.path.join(
-    os.path.dirname(__file__), "python", "pocketinfer", "specialist",
-    "corpus", "diksha_g7_science", "index",
+    os.path.dirname(__file__), "corpus", "diksha_g7_science", "index",
 )
 
 CANNED = [

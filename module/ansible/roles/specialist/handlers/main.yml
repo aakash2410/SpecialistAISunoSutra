@@ -1,0 +1,12 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+  become: true
+
+- name: restart pocketinfer
+  ansible.builtin.systemd:
+    name: pocketinfer
+    state: restarted
+  become: true
+  when: specialist_restart_service | bool

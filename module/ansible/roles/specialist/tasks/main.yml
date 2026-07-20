@@ -1,0 +1,133 @@
+---
+# Install The Specialist module onto a device that ALREADY has the Suno Sutra base.
+#
+# Everything here is ADDITIVE: only new files are written into the base python
+# package, content goes to its own data directory, and the boot application is
+# selected via a systemd drop-in. No base file is modified.
+
+- name: Verify the Suno Sutra base is present on the device
+  tags: [always]
+  ansible.builtin.stat:
+    path: "{{ specialist_pkg_dir }}/applications/registry.py"
+  register: specialist_base
+
+- name: Fail early if the base platform is missing
+  tags: [always]
+  ansible.builtin.fail:
+    msg: >-
+      Suno Sutra base not found at {{ specialist_pkg_dir }}. Provision the base
+      platform first (rootfs/install_all_usb.yml), then install this module.
+  when: not specialist_base.stat.exists
+
+# ---------------------------------------------------------------- code overlay
+- name: Install new model wrappers (embed, ocr)
+  tags: [code]
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../payload/python/pocketinfer/models/{{ item }}"
+    dest: "{{ specialist_pkg_dir }}/models/{{ item }}"
+    mode: "0644"
+  loop:
+    - embed.py
+    - ocr.py
+  notify: restart pocketinfer
+
+- name: Install the Specialist runtime subpackage
+  tags: [code]
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../payload/python/pocketinfer/specialist/"
+    dest: "{{ specialist_pkg_dir }}/specialist/"
+    mode: "0644"
+  notify: restart pocketinfer
+
+- name: Install the Specialist application
+  tags: [code]
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../payload/python/pocketinfer/applications/specialist_app.py"
+    dest: "{{ specialist_pkg_dir }}/applications/specialist_app.py"
+    mode: "0644"
+  notify: restart pocketinfer
+
+# -------------------------------------------------------------------- content
+- name: Ensure the corpus data directory exists
+  tags: [content]
+  ansible.builtin.file:
+    path: "{{ specialist_corpus_dir }}"
+    state: directory
+    owner: "{{ specialist_corpus_owner }}"
+    mode: "0755"
+  become: true
+
+- name: Deploy the baked DIKSHA corpus/index
+  tags: [content]
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../payload/corpus/"
+    dest: "{{ specialist_corpus_dir }}/"
+    owner: "{{ specialist_corpus_owner }}"
+    mode: "0644"
+    directory_mode: "0755"
+  become: true
+  notify: restart pocketinfer
+
+# --------------------------------------------------------------- dependencies
+- name: Install the module's python dependencies
+  tags: [deps]
+  ansible.builtin.pip:
+    requirements: "{{ playbook_dir }}/../requirements-specialist.txt"
+    executable: "{{ specialist_pip_executable }}"
+  register: specialist_pip
+  failed_when: false
+
+- name: Report dependency install result
+  tags: [deps]
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'Dependencies installed.' if specialist_pip.rc | default(1) == 0 else
+      'Dependency install failed — the embedder will fall back to TF-IDF (device
+      still works, lower retrieval quality). Check specialist_pip_executable.' }}
+
+- name: Pre-fetch the embedding model so run time stays offline
+  tags: [deps]
+  ansible.builtin.command:
+    cmd: >-
+      {{ specialist_exec_path | dirname }}/python -c
+      "from pocketinfer.models.embed import Embed;
+      print(Embed.update({'model_name': '{{ specialist_embed_model }}'}))"
+  register: specialist_prefetch
+  changed_when: false
+  failed_when: false
+  when: specialist_prefetch_embed_model | bool
+
+# ------------------------------------------------------------ app selection
+- name: Ensure the systemd drop-in directory exists
+  tags: [service]
+  ansible.builtin.file:
+    path: /etc/systemd/system/pocketinfer.service.d
+    state: directory
+    mode: "0755"
+  become: true
+  when: specialist_set_default_app | bool
+
+- name: Boot into The Specialist (additive systemd drop-in)
+  tags: [service]
+  ansible.builtin.template:
+    src: 10-specialist.conf.j2
+    dest: /etc/systemd/system/pocketinfer.service.d/10-specialist.conf
+    mode: "0644"
+  become: true
+  when: specialist_set_default_app | bool
+  notify:
+    - reload systemd
+    - restart pocketinfer
+
+- name: Sanity check — the Specialist app is registered
+  tags: [verify]
+  ansible.builtin.command:
+    cmd: "{{ specialist_exec_path }} --list-apps"
+  register: specialist_apps
+  changed_when: false
+  failed_when: false
+
+- name: Show registered applications
+  tags: [verify]
+  ansible.builtin.debug:
+    var: specialist_apps.stdout_lines
