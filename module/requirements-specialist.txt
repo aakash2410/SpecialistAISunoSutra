@@ -9,4 +9,4 @@ numpy
 # Installs against the torch that ships in the JetPack SDK base image.
 # If unavailable, the embedder transparently falls back to a built-in TF-IDF
 # model, so the device still functions (with lower retrieval quality).
-sentence-transformers
+sentence-transformers>=2.2.0

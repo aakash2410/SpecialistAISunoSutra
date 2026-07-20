@@ -27,7 +27,8 @@ kept **byte-identical to upstream**.
 
 ```bash
 cd "Specialist v1"
-pip install numpy                      # the only dep the offline demo needs
+pip install numpy                      # the offline demo needs nothing else
+# (or: pip install -r requirements.txt  for the full off-device dev set)
 python ingest/build_index.py           # bake the DIKSHA index once
 python demo.py                         # run the canned questions
 ```
@@ -54,7 +55,7 @@ The device already has the Suno Sutra base, so we ship an **additive overlay**.
 
 1. **Bake the index with the production embedder** (off-device, online, once):
    ```bash
-   pip install -r module/requirements-specialist.txt   # sentence-transformers
+   pip install -r requirements.txt        # includes sentence-transformers
    python ingest/build_index.py --model intfloat/multilingual-e5-small
    ```
 

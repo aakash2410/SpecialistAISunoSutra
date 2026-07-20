@@ -1,14 +1,42 @@
-# Specialist v1 dependencies.
+# The Specialist v1 — developer (off-device) dependencies.
 #
-# Minimum (laptop demo + ingestion with the hashing fallback embedder):
+# There are four requirement sets, each with a distinct purpose:
+#
+#   requirements.txt                    <- THIS FILE. Off-device dev work:
+#                                          building the DIKSHA index, running the
+#                                          text demo, packaging the device module.
+#   local/requirements-local.txt        <- Laptop voice loop (mic + offline ASR).
+#   module/requirements-specialist.txt  <- Installed ON the device by the module.
+#   python/requirements.txt             <- Vendored Suno Sutra base. DO NOT EDIT
+#                                          (kept byte-identical to upstream).
+#
+# Install:  pip install -r requirements.txt
+
+
+# --- required -----------------------------------------------------------------
+# Vector maths for the retrieval index; used by ingest/ and demo.py.
 numpy
 
-# Recommended (real Indic-capable on-device embedding model for retrieval).
-# Install these to build/run with the production embedder:
+
+# --- recommended --------------------------------------------------------------
+# Production embedding model. Bake the shipping index with this before deploying:
+#   python ingest/build_index.py --model intfloat/multilingual-e5-small
+# Without it the embedder falls back to a built-in, dependency-free TF-IDF model.
+# That fallback is fine for local demos but has lower retrieval quality — do not
+# ship a device index built with it.
 sentence-transformers>=2.2.0
 
-# On the Suno Sutra device, the platform already provides ollama, requests,
-# vosk, opencv-python, pyaudio, etc. via python/requirements.txt — they are not
-# repeated here. `requests` is only needed if you call BHASHINI MT/TTS from the
-# laptop demo:
+
+# --- packaging / validating the device overlay module -------------------------
+# scripts/make_module.sh itself needs nothing extra, but running or
+# syntax-checking the module's Ansible playbook does:
+#   ansible-playbook -i inventory.ini install_specialist.yml --syntax-check
+ansible-core
+
+
+# --- optional -----------------------------------------------------------------
+# Only needed to drive the device's BHASHINI ASR/MT/TTS from the laptop, i.e.
+#   python -m local.voice_loop --asr bhashini --mt bhashini --tts bhashini
+# (the BHASHINI service must be reachable on :11400). On the device itself this
+# is already provided by the base platform.
 requests
