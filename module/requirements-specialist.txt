@@ -3,10 +3,19 @@
 # stays pristine and upstream-updatable.
 
 # Vector maths for retrieval (usually already present via the base install).
-numpy
+# NOTE: keep numpy < 2 on the Jetson — the base scipy/onnxruntime are built for
+# the NumPy 1.x ABI and crash under NumPy 2.
+numpy<2
 
-# On-device, Indic-capable embedding model for retrieval.
-# Installs against the torch that ships in the JetPack SDK base image.
-# If unavailable, the embedder transparently falls back to a built-in TF-IDF
-# model, so the device still functions (with lower retrieval quality).
-sentence-transformers>=2.2.0
+# On-device, Indic-capable embedding model for retrieval — ONNX backend.
+# Runs multilingual-e5-small on onnxruntime (onnxruntime-gpu is already installed
+# on the device by the base image) plus a lightweight tokenizer. No torch /
+# sklearn / scipy, so it avoids the Jetson dependency conflicts.
+#   - onnxruntime: only needed off-device; on the Jetson use the base's
+#     onnxruntime-gpu (do NOT install plain onnxruntime over it).
+#   - tokenizers: small Rust-backed tokenizer, the only genuinely new dep.
+# Fetch the model files once with tools/fetch_onnx_embedder.py.
+# If the ONNX model is absent, the embedder falls back to a built-in TF-IDF model
+# so the device still functions (at lower retrieval quality).
+tokenizers
+onnxruntime ; platform_machine != "aarch64"

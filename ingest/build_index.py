@@ -99,7 +99,7 @@ def main():
     ap.add_argument("--corpus", default=os.path.join(
         os.path.dirname(__file__), "..", "corpus", "diksha_g7_science"))
     ap.add_argument("--model", default=DEFAULT_MODEL_NAME)
-    ap.add_argument("--prefer", choices=["auto", "sentence-transformers", "hashing"], default="auto")
+    ap.add_argument("--prefer", choices=["auto", "onnx", "sentence-transformers", "tfidf"], default="auto")
     ap.add_argument("--max-words", type=int, default=120)
     ap.add_argument("--overlap", type=int, default=25)
     args = ap.parse_args()

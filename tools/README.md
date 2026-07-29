@@ -1,4 +1,34 @@
-# Device remote-access tools
+# Device tools
+
+## `fetch_onnx_embedder.py` — the neural embedding model (ONNX)
+
+The production embedder runs `multilingual-e5-small` on **onnxruntime** (already
+installed on the Jetson via the base image) with only a lightweight `tokenizers`
+dependency — no torch/sklearn/scipy, so it avoids the Jetson NumPy/ABI conflicts.
+
+```bash
+# 1. deps (on the device use the base's onnxruntime-gpu; do NOT pip-install
+#    plain onnxruntime over it). Keep numpy < 2.
+pip3 install --user "numpy<2" tokenizers
+
+# 2. fetch the model once (online): ~120 MB quantized (default) or --fp32
+python3 tools/fetch_onnx_embedder.py --dest /opt/specialist/models/multilingual-e5-small-onnx
+
+# 3. rebuild the index with the neural embedder, then deploy it
+python3 ingest/build_index.py --prefer onnx
+sudo cp -r corpus/diksha_g7_science/index /opt/specialist/corpus/diksha_g7_science/
+
+# 4. confirm
+python3 tests/device_io_check.py     # embedding model (neural) -> PASS
+```
+
+`Embed` finds the model automatically at `/opt/specialist/models/…`,
+`local/models/…` (dev checkout), or `$SPECIALIST_ONNX_DIR`. If it's absent, the
+embedder falls back to TF-IDF so the device keeps working.
+
+---
+
+# Remote-access tools
 
 ## `tailscale_access.py`
 

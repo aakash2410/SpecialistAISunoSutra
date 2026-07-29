@@ -66,12 +66,12 @@ def check_embedder():
         from pocketinfer.models.embed import DEFAULT_MODEL_NAME, Embed
 
         e = Embed(model_name=DEFAULT_MODEL_NAME)
-        if e.backend == "sentence-transformers":
-            record("embedding model (neural)", PASS, f"{DEFAULT_MODEL_NAME}, dim={e.dim}")
+        if e.backend in ("onnx", "sentence-transformers"):
+            record("embedding model (neural)", PASS, f"{e.backend}: {DEFAULT_MODEL_NAME}, dim={e.dim}")
         else:
             record("embedding model", WARN,
-                   "using TF-IDF fallback — install sentence-transformers + rebuild "
-                   "the index for production retrieval quality")
+                   "using TF-IDF fallback — fetch the ONNX model "
+                   "(tools/fetch_onnx_embedder.py) + rebuild the index for production quality")
     except Exception as e:  # noqa: BLE001
         record("embedding model", FAIL, str(e))
 

@@ -82,6 +82,30 @@ def test_verify_classmethod_reports_backend():
     assert "tfidf" in msg
 
 
+def _onnx_ready():
+    import importlib.util
+
+    if not (importlib.util.find_spec("onnxruntime") and importlib.util.find_spec("tokenizers")):
+        return False
+    from pocketinfer.models.embed import _resolve_onnx_dir
+
+    return _resolve_onnx_dir() is not None
+
+
+@pytest.mark.skipif(not _onnx_ready(), reason="onnxruntime/tokenizers/ONNX model not present")
+def test_onnx_backend_semantic_and_threshold():
+    e = Embed(prefer="onnx")
+    assert e.backend == "onnx"
+    assert e.dim == 384
+    v = e.embed_one("photosynthesis", "query")
+    assert np.isclose(np.linalg.norm(v), 1.0, atol=1e-4)
+    # Neural semantics: a paraphrase with NO shared keywords beats an off-topic sentence.
+    M = e.embed(["Plants make their own food from sunlight.", "Cricket is a bat-and-ball sport."], "passage")
+    sims = M @ e.embed_one("how do green plants produce food", "query")
+    assert sims[0] > sims[1]
+    assert e.recommended_min_score == 0.84
+
+
 @pytest.mark.skipif(
     __import__("importlib").util.find_spec("sentence_transformers") is None,
     reason="sentence-transformers not installed (neural embedder path)",
