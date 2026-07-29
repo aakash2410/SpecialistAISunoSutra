@@ -120,12 +120,16 @@ def play_wav_bytes(data: bytes) -> None:
         tmp.write(data)
         tmp.close()
         if sys.platform == "darwin":
-            cmd = ["afplay", tmp.name]
-        else:
-            # Route to a specific ALSA device if given (find yours with `aplay -l`,
-            # e.g. SPECIALIST_ALSA_DEVICE=hw:1,0); otherwise the default device.
-            dev = os.environ.get("SPECIALIST_ALSA_DEVICE")
-            cmd = ["aplay"] + (["-D", dev] if dev else []) + [tmp.name]
-        subprocess.run(cmd, check=False)
+            subprocess.run(["afplay", tmp.name], check=False)
+            return
+        # Route to a specific ALSA device if given (find yours with `aplay -l`,
+        # e.g. SPECIALIST_ALSA_DEVICE=plughw:0,0); otherwise the default device.
+        dev = os.environ.get("SPECIALIST_ALSA_DEVICE")
+        cmd = ["aplay"] + (["-D", dev] if dev else []) + [tmp.name]
+        r = subprocess.run(cmd)
+        # A raw 'hw:' device does no format conversion and rejects mono/odd rates;
+        # retry through the 'plug' plugin, which converts channels/rate on the fly.
+        if r.returncode != 0 and dev and dev.startswith("hw:"):
+            subprocess.run(["aplay", "-D", "plug" + dev, tmp.name], check=False)
     finally:
         os.unlink(tmp.name)
