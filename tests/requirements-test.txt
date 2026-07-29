@@ -1,0 +1,6 @@
+# Test dependencies (Layer A automated suite).
+#   pip install -r tests/requirements-test.txt
+pytest
+
+# numpy is needed by the code under test; installed via requirements.txt.
+# sentence-transformers / vosk are optional — their tests skip when absent.
