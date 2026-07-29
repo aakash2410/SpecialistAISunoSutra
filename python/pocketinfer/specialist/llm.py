@@ -20,7 +20,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def ollama_grounded_client(model_name: str, num_predict: int = 160,
+def ollama_grounded_client(model_name: str, num_predict: int = 128,
                            timeout: float = 90.0, temperature: float = 0.0,
                            keep_alive="30m"):
     """Build a grounded LLM client backed by the on-device Ollama model.

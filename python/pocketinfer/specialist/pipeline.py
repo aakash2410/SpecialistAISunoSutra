@@ -69,7 +69,7 @@ class SpecialistEngine:
         llm: Optional[LLMClient] = None,
         mt: Optional[MTClient] = None,
         tts: Optional[TTSClient] = None,
-        top_k: int = 4,
+        top_k: int = 3,
         min_score: Optional[float] = None,
     ):
         self.index = VectorIndex(index_dir)

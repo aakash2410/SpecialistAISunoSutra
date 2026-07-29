@@ -68,9 +68,9 @@ def classify_intent(request: str) -> str:
 
 def _instruction(intent: str) -> str:
     return {
-        "explain": "Explain the answer clearly for a school student, using only the source passages.",
-        "simplify": "Explain in very simple words a young student can understand, using only the source passages. Use short sentences.",
-        "answer": "Answer the question directly and briefly, using only the source passages.",
+        "explain": "Explain clearly for a school student, using only the source passages. Keep it to 3-5 short sentences.",
+        "simplify": "Explain in very simple words a young student understands, using only the source passages. Use 3-5 short sentences.",
+        "answer": "Answer directly, using only the source passages. One to three short sentences.",
     }[intent]
 
 
@@ -105,7 +105,9 @@ def build_grounding(
         "approved DIKSHA textbook content. Do not use any outside knowledge. "
         "Do not guess. If the passages do not contain enough information to answer "
         f"the teacher's request, reply with exactly: {REFUSAL_SENTINEL}\n\n"
-        "Keep the answer correct, concise, and suitable to be read aloud to a class. "
+        "Keep the answer short — a few sentences — correct, and suitable to be read "
+        "aloud to a class. Give ONLY the answer: no preamble, no meta commentary "
+        "(do not start with 'Here is an explanation'). "
         "Answer in English; translation to the local language happens afterwards.\n\n"
         f"SOURCE passages:\n{sources_block}"
     )

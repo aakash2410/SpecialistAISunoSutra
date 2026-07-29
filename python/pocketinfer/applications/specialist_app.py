@@ -54,10 +54,12 @@ DEFAULT_INDEX = os.environ.get(
     "author": "PocketInfer",
     "version": "1.0.0",
     "models": {
-        # Reuse the platform's stock quantised LLM (same model HearTheWorld ships
-        # with) — grounding is done purely via the prompt, so no new model pull is
-        # needed. Swap for any stock text-capable LLM present on the device.
-        "ollama": {"model_name": "qwen3-vl:2b"},
+        # Small quantised TEXT LLM. The platform's stock qwen3-vl:2b is a vision
+        # model — too heavy for the real-time grounded text loop on the Orin Nano
+        # 8GB (2.8GB, spills to CPU, 60s+ reloads). llama3.2:1b runs 100% on GPU,
+        # loads in ~8s, and grounds cleanly (grounding is prompt-based). Pull with:
+        #   ollama pull llama3.2:1b
+        "ollama": {"model_name": "llama3.2:1b"},
         "vosk": {"model_name": "vosk-model-small-en-us-0.15"},
         "asr": {},
         "nmt": {},
