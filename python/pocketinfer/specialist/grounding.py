@@ -106,8 +106,7 @@ def build_grounding(
         "Do not guess. If the passages do not contain enough information to answer "
         f"the teacher's request, reply with exactly: {REFUSAL_SENTINEL}\n\n"
         "Keep the answer short — a few sentences — correct, and suitable to be read "
-        "aloud to a class. Give ONLY the answer: no preamble, no meta commentary "
-        "(do not start with 'Here is an explanation'). "
+        "aloud to a class. "
         "Answer in English; translation to the local language happens afterwards.\n\n"
         f"SOURCE passages:\n{sources_block}"
     )

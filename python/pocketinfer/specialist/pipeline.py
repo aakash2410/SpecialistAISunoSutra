@@ -120,7 +120,8 @@ class SpecialistEngine:
 
         # Generation gate: the model says the sources don't cover it.
         if is_refusal_response(llm_text):
-            g.reason = "LLM reported insufficient information in the sources."
+            snippet = (llm_text or "").strip()[:100] or "(empty response)"
+            g.reason = f"LLM reported insufficient information (said: {snippet!r})."
             return self._finalize_refusal(request, target_language, g, passages, t)
 
         answer_localized = llm_text
