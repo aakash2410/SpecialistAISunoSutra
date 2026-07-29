@@ -49,3 +49,35 @@ def ollama_grounded_client(model_name: str, num_predict: int = 128,
             return resp["message"]["content"]
 
     return _client
+
+
+def ollama_grounded_stream_client(model_name: str, num_predict: int = 128,
+                                  timeout: float = 90.0, temperature: float = 0.0,
+                                  keep_alive="30m"):
+    """Streaming variant: returns (system, user) -> iterator of text chunks.
+
+    Lets the caller assemble sentences and pipeline MT/TTS as the model generates,
+    so the first sentence can be spoken while the rest is still being produced.
+    """
+    import ollama
+
+    client = ollama.Client(timeout=timeout)
+
+    def _client(system_prompt: str, user_prompt: str):
+        stream = client.chat(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            options={"num_predict": num_predict, "temperature": temperature},
+            keep_alive=keep_alive,
+            stream=True,
+        )
+        for chunk in stream:
+            try:
+                yield chunk.message.content
+            except AttributeError:
+                yield chunk["message"]["content"]
+
+    return _client

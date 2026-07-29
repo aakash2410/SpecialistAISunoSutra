@@ -8,6 +8,7 @@ from pocketinfer.specialist.grounding import (
     classify_intent,
     clean_answer,
     is_refusal_response,
+    iter_sentences,
 )
 from pocketinfer.specialist.vector_index import Retrieved
 
@@ -76,3 +77,17 @@ def test_generation_gate_detects_refusal(text, is_refusal):
 ])
 def test_clean_answer_strips_preamble_and_refusal(raw, expected):
     assert clean_answer(raw) == expected
+
+
+def test_iter_sentences_assembles_from_token_stream():
+    # Simulate an LLM streaming tokens (split mid-word/mid-sentence).
+    tokens = ["Heat flows", " from hot", " to cold.", " It has thr", "ee ways!", " Done?"]
+    assert list(iter_sentences(tokens)) == ["Heat flows from hot to cold.", "It has three ways!", "Done?"]
+
+
+def test_iter_sentences_flushes_unterminated_remainder():
+    assert list(iter_sentences(["No period here"])) == ["No period here"]
+
+
+def test_iter_sentences_handles_devanagari_danda():
+    assert list(iter_sentences(["यह वाक्य है।", " दूसरा।"])) == ["यह वाक्य है।", "दूसरा।"]

@@ -151,6 +151,32 @@ def is_refusal_response(llm_text: str) -> bool:
     return _REFUSAL_RE.match(t) is not None
 
 
+_SENTENCE_END_RE = re.compile(r"[.!?।]+[\s\"')\]]*")
+
+
+def iter_sentences(chunks):
+    """Assemble complete sentences from a stream of text chunks (for streaming).
+
+    Yields each sentence as soon as its terminating punctuation arrives, so the
+    downstream MT/TTS can start on sentence 1 while the LLM is still producing
+    sentence 2. Flushes any trailing remainder at the end.
+    """
+    buf = ""
+    for ch in chunks:
+        buf += ch
+        while True:
+            m = _SENTENCE_END_RE.search(buf)
+            if not m:
+                break
+            cut = m.end()
+            sentence = buf[:cut].strip()
+            buf = buf[cut:]
+            if sentence:
+                yield sentence
+    if buf.strip():
+        yield buf.strip()
+
+
 def clean_answer(llm_text: str) -> str:
     """Strip a meta preamble and any leaked refusal phrase from a valid answer."""
     cleaned = _PREAMBLE_RE.sub("", llm_text or "")

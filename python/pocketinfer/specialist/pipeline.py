@@ -98,6 +98,18 @@ class SpecialistEngine:
                 baked, live,
             )
 
+    def prepare(self, request: str):
+        """Embed + retrieve + ground WITHOUT calling the LLM.
+
+        Returns the GroundingResult so a caller can stream the LLM itself (see
+        the streaming voice loop). ``g.refused`` means the retrieval gate blocked
+        it; otherwise use ``g.system_prompt`` / ``g.user_prompt``.
+        """
+        qvec = self.embedder.embed_one(request, kind="query")
+        passages = self.index.search(qvec, top_k=self.top_k)
+        kwargs = {} if self.min_score is None else {"min_score": self.min_score}
+        return build_grounding(request, passages, **kwargs)
+
     def answer(self, request: str, target_language: str = "en") -> AnswerResult:
         t = {}
         t0 = time.time()
