@@ -141,7 +141,7 @@ class SpecialistEngine:
             answer_en=llm_text,
             answer_localized=answer_localized,
             citations=g.citations,
-            passages=passages,
+            passages=g.passages,  # relevance-filtered set that was actually grounded on
             timings=t,
         )
         self._maybe_tts(result)

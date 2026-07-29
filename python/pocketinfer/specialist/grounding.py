@@ -92,9 +92,14 @@ def build_grounding(
             reason=f"Best passage similarity {best:.2f} < threshold {min_score:.2f}.",
         )
 
+    # Only ground on passages that actually clear the relevance threshold — drops
+    # low-scoring noise passages from both the prompt (faster) and the citations
+    # (a teacher shouldn't see an unrelated chapter cited). The gate above
+    # guarantees at least passages[0] qualifies.
+    relevant = [p for p in passages if p.score >= min_score]
     numbered = []
     citations = []
-    for i, p in enumerate(passages, 1):
+    for i, p in enumerate(relevant, 1):
         numbered.append(f"[{i}] ({p.citation()})\n{p.text}")
         citations.append(p.citation())
     sources_block = "\n\n".join(numbered)
@@ -116,7 +121,7 @@ def build_grounding(
     return GroundingResult(
         refused=False,
         intent=intent,
-        passages=passages,
+        passages=relevant,
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         citations=citations,
