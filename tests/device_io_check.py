@@ -38,7 +38,8 @@ def _http_ok(url, timeout=3.0):
     import urllib.request
 
     with urllib.request.urlopen(url, timeout=timeout) as r:
-        return r.status == 200, r.read().decode(errors="replace")[:200]
+        # Return the FULL body — callers parse it as JSON, so it must not be truncated.
+        return r.status == 200, r.read().decode(errors="replace")
 
 
 # ------------------------------------------------------------ automatic checks
@@ -54,7 +55,10 @@ def check_imports():
             __import__(mod)
             record(f"import {mod}", PASS)
         except Exception as e:  # noqa: BLE001
-            record(f"import {mod}", FAIL, str(e))
+            hint = ""
+            if "specialist" in mod or mod.endswith((".embed", ".ocr")):
+                hint = " — overlay not installed here; deploy module/ or re-run with --repo"
+            record(f"import {mod}", FAIL, f"{e}{hint}")
 
 
 def check_embedder():
@@ -76,12 +80,20 @@ def check_index(index_dir):
     try:
         from pocketinfer.specialist.vector_index import VectorIndex
 
-        if not os.path.exists(os.path.join(index_dir, "embeddings.npy")):
-            return record("DIKSHA index", FAIL, f"not found at {index_dir}")
-        idx = VectorIndex(index_dir)
-        ok = len(idx.chunks) == idx.embeddings.shape[0] > 0
-        record("DIKSHA index", PASS if ok else FAIL,
-               f"{len(idx.chunks)} chunks, dim={idx.dim}, embedder={idx.embedder_name}")
+        repo_local = os.path.abspath(os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", "corpus",
+            "diksha_g7_science", "index"))
+        candidates = [(index_dir, ""), (repo_local, " (repo copy — not yet deployed to /opt; "
+                                                    "run the module install to place it there)")]
+        for cand, note in candidates:
+            if os.path.exists(os.path.join(cand, "embeddings.npy")):
+                idx = VectorIndex(cand)
+                ok = len(idx.chunks) == idx.embeddings.shape[0] > 0
+                return record("DIKSHA index", PASS if ok else FAIL,
+                              f"{len(idx.chunks)} chunks, dim={idx.dim}, "
+                              f"embedder={idx.embedder_name}{note}")
+        record("DIKSHA index", FAIL,
+               f"not found at {index_dir} (nor a repo copy). Deploy the module or pass --index.")
     except Exception as e:  # noqa: BLE001
         record("DIKSHA index", FAIL, str(e))
 
@@ -96,9 +108,15 @@ def check_services():
     # Ollama LLM
     try:
         ok, body = _http_ok("http://localhost:11434/api/tags")
-        models = [m.get("model") for m in json.loads(body).get("models", [])] if ok else []
-        record("ollama service (:11434)", PASS if ok else FAIL,
-               f"models: {', '.join(models) or 'none pulled'}")
+        if not ok:
+            record("ollama service (:11434)", FAIL)
+        else:
+            try:
+                names = [m.get("model", "") for m in json.loads(body).get("models", [])]
+                record("ollama service (:11434)", PASS,
+                       f"models: {', '.join(n for n in names if n) or 'none pulled'}")
+            except json.JSONDecodeError as je:
+                record("ollama service (:11434)", WARN, f"up, but model list unparseable: {je}")
     except Exception as e:  # noqa: BLE001
         record("ollama service (:11434)", FAIL, f"{e} — systemctl status ollama")
 
@@ -228,11 +246,24 @@ def main():
     ap.add_argument("--interactive", action="store_true",
                     help="also test physical I/O (mic, speaker, camera, screen, button)")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--repo", action="store_true",
+                    help="import from THIS repo checkout instead of the installed platform "
+                         "(pre-deploy testing; note the checkout omits LFS fonts so the board "
+                         "check may not load).")
     args = ap.parse_args()
 
-    # Make the device package importable when run from the repo checkout.
+    # Prefer the platform INSTALLED on the device (it has the LFS fonts and is
+    # where the overlay module gets installed). Only fall back to this repo
+    # checkout if the platform isn't importable, or when --repo is given.
     here = os.path.dirname(os.path.abspath(__file__))
-    sys.path.insert(0, os.path.join(here, "..", "python"))
+    repo_python = os.path.join(here, "..", "python")
+    if args.repo:
+        sys.path.insert(0, repo_python)
+    else:
+        try:
+            import pocketinfer  # noqa: F401
+        except ImportError:
+            sys.path.insert(0, repo_python)
 
     print(f"Specialist device check @ {socket.gethostname()}  ({time.strftime('%Y-%m-%d %H:%M:%S')})")
     print("\n-- automatic checks --")
