@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
 
 from pocketinfer.specialist.providers import AudioClip
@@ -115,10 +116,30 @@ class BhashiniMT:
 
         self._nmt = Nmt()
 
+    @staticmethod
+    def _code(lang: str) -> str:
+        # Match the platform convention: English is "EN", other languages are the
+        # lowercase ISO code (e.g. "hi"). Uppercasing "hi" -> "HI" 500s the model.
+        return "EN" if lang.lower() == "en" else lang.lower()
+
     def translate(self, text: str, src_lang: str, tgt_lang: str) -> str:
         if src_lang.lower() == tgt_lang.lower():
             return text
-        return self._nmt.infer(text, src_lang.upper(), tgt_lang.upper())["translated_text"]
+        src, tgt = self._code(src_lang), self._code(tgt_lang)
+        try:
+            return self._nmt.infer(text, src, tgt)["translated_text"]
+        except Exception as e:  # noqa: BLE001
+            # BHASHINI NMT is sentence-tuned and can 500 on a long/multiline
+            # paragraph — translate sentence by sentence and stitch back.
+            logger.warning("NMT failed on full text (%s); retrying per sentence", e)
+            sentences = [s.strip() for s in re.split(r"(?<=[.!?।])\s+", text) if s.strip()]
+            out = []
+            for s in sentences:
+                try:
+                    out.append(self._nmt.infer(s, src, tgt)["translated_text"])
+                except Exception:  # noqa: BLE001
+                    out.append(s)  # leave that sentence untranslated rather than fail
+            return " ".join(out)
 
 
 # --------------------------------------------------------------------------- TTS
