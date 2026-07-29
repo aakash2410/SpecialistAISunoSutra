@@ -20,9 +20,11 @@ storage. Every non-refusal answer carries DIKSHA citations.
 from __future__ import annotations
 
 import logging
+import queue
+import threading
 import time
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional
+from typing import Callable, Iterator, List, Optional
 
 from ..models.embed import DEFAULT_MODEL_NAME, Embed
 from .grounding import (
@@ -30,6 +32,7 @@ from .grounding import (
     build_grounding,
     clean_answer,
     is_refusal_response,
+    iter_sentences,
 )
 from .vector_index import Retrieved, VectorIndex
 
@@ -37,6 +40,8 @@ logger = logging.getLogger(__name__)
 
 # A grounded LLM client: takes (system_prompt, user_prompt), returns the answer.
 LLMClient = Callable[[str, str], str]
+# A streaming grounded LLM client: takes (system_prompt, user_prompt), yields text chunks.
+StreamLLMClient = Callable[[str, str], "Iterator[str]"]
 # A translation client: takes (text, src_lang, tgt_lang), returns translated text.
 MTClient = Callable[[str, str, str], str]
 # A TTS client: takes (text, language), returns audio bytes (e.g. WAV).
@@ -62,6 +67,23 @@ class AnswerResult:
         return self.answer_localized or self.answer_en
 
 
+@dataclass
+class SentenceResult:
+    """One sentence of a streamed answer: text (English + localized) and its
+    synthesized audio, ready to be played while the next sentence is produced."""
+    index: int
+    text_en: str
+    text_localized: str
+    audio: Optional[bytes] = None
+    refused: bool = False
+    citations: List[str] = field(default_factory=list)   # populated on the first item
+    reason: str = ""
+
+    @property
+    def spoken_text(self) -> str:
+        return self.text_localized or self.text_en
+
+
 class SpecialistEngine:
     def __init__(
         self,
@@ -70,6 +92,7 @@ class SpecialistEngine:
         llm: Optional[LLMClient] = None,
         mt: Optional[MTClient] = None,
         tts: Optional[TTSClient] = None,
+        stream_llm: Optional[StreamLLMClient] = None,
         top_k: int = 3,
         min_score: Optional[float] = None,
     ):
@@ -80,6 +103,7 @@ class SpecialistEngine:
             self.embedder.load_state(index_dir)
         self._check_embedder_matches_index()
         self.llm = llm or extractive_llm  # extractive fallback keeps it offline+runnable
+        self.stream_llm = stream_llm      # optional; else stream_answer pseudo-streams
         self.mt = mt
         self.tts = tts
         self.top_k = top_k
@@ -109,6 +133,61 @@ class SpecialistEngine:
         passages = self.index.search(qvec, top_k=self.top_k)
         kwargs = {} if self.min_score is None else {"min_score": self.min_score}
         return build_grounding(request, passages, **kwargs)
+
+    def stream_answer(self, request: str, target_language: str = "en") -> Iterator[SentenceResult]:
+        """Yield the answer one sentence at a time (embed -> retrieve -> ground ->
+        stream LLM -> per-sentence MT + TTS).
+
+        Each yielded SentenceResult carries its synthesized audio, so a caller can
+        play sentence N while this generator produces N+1 (see ``speak_stream``).
+        Uses the streaming LLM if one was provided; otherwise it pseudo-streams by
+        sentence-splitting a single full answer. Refusals (retrieval gate or the
+        LLM leading with the sentinel) yield a single refused SentenceResult.
+        """
+        def _localize(text: str) -> str:
+            if self.mt and target_language and target_language.lower() != "en":
+                try:
+                    return self.mt(text, "EN", target_language)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("stream MT failed (%s)", e)
+            return text
+
+        def _audio(text: str) -> Optional[bytes]:
+            if self.tts:
+                try:
+                    return self.tts(text, target_language)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("stream TTS failed (%s)", e)
+            return None
+
+        def _refusal(reason: str) -> SentenceResult:
+            loc = _localize(REFUSAL_TEXT)
+            return SentenceResult(0, REFUSAL_TEXT, loc, _audio(loc), refused=True, reason=reason)
+
+        g = self.prepare(request)
+        if g.refused:
+            yield _refusal(g.reason)
+            return
+
+        if self.stream_llm is not None:
+            chunks = self.stream_llm(g.system_prompt, g.user_prompt)
+        else:
+            chunks = iter([self.llm(g.system_prompt, g.user_prompt)])
+
+        idx = 0
+        for i, sentence in enumerate(iter_sentences(chunks)):
+            if i == 0 and is_refusal_response(sentence):
+                yield _refusal("LLM reported no answer in source")
+                return
+            text = clean_answer(sentence)
+            if not text:
+                continue
+            loc = _localize(text)
+            yield SentenceResult(
+                index=idx, text_en=text, text_localized=loc, audio=_audio(loc),
+                citations=g.citations if idx == 0 else [],
+            )
+            idx += 1
 
     def answer(self, request: str, target_language: str = "en") -> AnswerResult:
         t = {}
@@ -215,3 +294,48 @@ def extractive_llm(system_prompt: str, user_prompt: str) -> str:
     if end != -1:
         body = body[:end]
     return body.strip()
+
+
+def speak_stream(sentences: Iterator[SentenceResult], play_fn: Callable[[bytes], None],
+                 on_sentence: Optional[Callable[[SentenceResult], None]] = None):
+    """Play a streamed answer with the audio overlapping generation.
+
+    Consumes ``engine.stream_answer(...)``: a background thread plays each
+    sentence's audio in order, while this loop keeps pulling the next sentence
+    from the engine (which runs LLM + MT + TTS for it). ``play_fn(audio_bytes)``
+    plays one clip (blocking) — board-specific, so the caller supplies it.
+    ``on_sentence`` is called for each SentenceResult (e.g. to print it).
+
+    Returns (results, first_audio_seconds) where first_audio_seconds is the delay
+    from start to the first spoken audio — the responsiveness metric that matters.
+    """
+    q: "queue.Queue" = queue.Queue()
+    _STOP = object()
+    marks = {"t0": time.time(), "first": None}
+
+    def _player():
+        while True:
+            item = q.get()
+            if item is _STOP:
+                break
+            if marks["first"] is None:
+                marks["first"] = time.time() - marks["t0"]
+            try:
+                play_fn(item)
+            except Exception:  # noqa: BLE001
+                logger.warning("playback failed", exc_info=True)
+
+    t = threading.Thread(target=_player, daemon=True)
+    t.start()
+    results: List[SentenceResult] = []
+    try:
+        for sr in sentences:
+            if on_sentence:
+                on_sentence(sr)
+            results.append(sr)
+            if sr.audio:
+                q.put(sr.audio)
+    finally:
+        q.put(_STOP)
+        t.join()
+    return results, marks["first"]

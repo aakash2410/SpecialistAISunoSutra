@@ -50,27 +50,32 @@ class LoopHarness:
 
         # Providers (each is swappable via the factory names).
         self.asr = None if args.text else make_asr(args.asr, vosk_model=args.vosk_model)
-        self.mt = make_mt(args.mt)
-        self.tts = None if args.no_speak else make_tts(args.tts)
-        self.llm_fn = make_llm(args.llm, ollama_model=args.ollama_model)
+        self.mt = make_mt(args.mt)                       # used for query-side translation too
+        self.tts_provider = None if args.no_speak else make_tts(args.tts)
 
         # Streaming LLM client (only ollama truly streams; other backends are
-        # pseudo-streamed by sentence-splitting a full answer).
-        self.stream_llm = None
-        if args.stream and args.llm == "ollama":
+        # pseudo-streamed by sentence-splitting a full answer inside the engine).
+        stream_llm = None
+        if args.llm == "ollama":
             from pocketinfer.specialist.llm import ollama_grounded_stream_client
 
-            self.stream_llm = ollama_grounded_stream_client(args.ollama_model)
+            stream_llm = ollama_grounded_stream_client(args.ollama_model)
 
-        # Specialist core (English in/out); MT + TTS are applied explicitly below.
+        # The engine now owns MT + TTS (as callables wrapping the providers), so
+        # both the sync and streaming paths go through the same formalized API.
+        tts_cb = (lambda text, lang: self.tts_provider.synthesize(text, lang)) if self.tts_provider else None
         self.engine = SpecialistEngine(
             index_dir=args.index,
             embedder=Embed(model_name=args.embed_model, prefer=args.embed_prefer),
-            llm=self.llm_fn,
+            llm=make_llm(args.llm, ollama_model=args.ollama_model),
+            stream_llm=stream_llm,
+            mt=(lambda text, src, tgt: self.mt.translate(text, src, tgt)),
+            tts=tts_cb,
         )
         print(
             f"[providers] asr={getattr(self.asr,'name','(text)')}  mt={self.mt.name}  "
-            f"tts={getattr(self.tts,'name','(off)')}  llm={args.llm}  "
+            f"tts={getattr(self.tts_provider,'name','(off)')}  llm={args.llm}  "
+            f"stream={'on' if args.stream else 'off'}  "
             f"embed={self.engine.embedder.backend}  in={self.in_lang} out={self.out_lang}"
         )
         if self.in_lang != "en" and self.mt.name == "none":
@@ -86,7 +91,19 @@ class LoopHarness:
         print(f"[1 ASR ] ({(time.time()-t0)*1000:.0f}ms, {clip.duration_seconds:.1f}s audio) -> {raw!r}")
         return raw
 
+    def _translate_query(self, raw: str, T: dict) -> str:
+        """Translate the request into English for the Specialist, if needed."""
+        if self.in_lang == "en":
+            return raw
+        ts = time.time()
+        query_en = self.mt.translate(raw, self.in_lang, "en")
+        T["mt_in"] = time.time() - ts
+        print(f"[2 MT  ] {self.in_lang}->en -> {query_en!r}")
+        return query_en
+
     def run_once(self, mic) -> bool:
+        from local.audio import play_wav_bytes
+
         T = {}
         t0 = time.time()
         ts = time.time()
@@ -95,18 +112,11 @@ class LoopHarness:
         if not raw:
             print("[skip] nothing heard.")
             return False
+        query_en = self._translate_query(raw, T)
 
-        # Stage 2: MT (optional) — user request -> English for the Specialist.
-        query_en = raw
-        if self.in_lang != "en":
-            ts = time.time()
-            query_en = self.mt.translate(raw, self.in_lang, "en")
-            T["mt_in"] = time.time() - ts
-            print(f"[2 MT  ] {self.in_lang}->en -> {query_en!r}")
-
-        # Stage 3: the Specialist (embed -> retrieve -> ground -> LLM), in English.
+        # The engine does embed -> retrieve -> ground -> LLM -> MT -> TTS-synth.
         ts = time.time()
-        result = self.engine.answer(query_en, target_language="en")
+        result = self.engine.answer(query_en, target_language=self.out_lang)
         T["specialist"] = time.time() - ts
         if result.refused:
             print(f"[3 SPEC] REFUSED — {result.reason}")
@@ -114,50 +124,22 @@ class LoopHarness:
             print(f"[3 SPEC] ({result.intent}) -> {result.answer_en}")
             for c in result.citations:
                 print(f"          · {c}")
+            if self.out_lang != "en":
+                print(f"[4 MT  ] en->{self.out_lang} -> {result.answer_localized!r}")
 
-        # Stage 4: MT (optional) — English answer -> output language.
-        answer_out = result.answer_en
-        if self.out_lang != "en":
+        if result.audio and self.tts_provider:
             ts = time.time()
-            answer_out = self.mt.translate(result.answer_en, "en", self.out_lang)
-            T["mt_out"] = time.time() - ts
-            print(f"[4 MT  ] en->{self.out_lang} -> {answer_out!r}")
-
-        # Stage 5: TTS — speak it.
-        if self.tts:
-            print(f"[5 TTS ] speaking via {self.tts.name} ({self.out_lang})...")
-            ts = time.time()
-            self.tts.speak(answer_out, self.out_lang)
-            T["tts"] = time.time() - ts
+            play_wav_bytes(result.audio)
+            T["playback"] = time.time() - ts
 
         T["TOTAL"] = time.time() - t0
         print(f"[time ] core: {_fmt_timings(result.timings)}")
         print(f"[time ] end-to-end: {_fmt_timings(T)}")
         return True
 
-    # --- streaming path: speak sentence N while N+1 is still being produced -----
-    def _stream_source(self, g):
-        """Yield LLM text chunks. Real streaming for ollama; a single chunk
-        (split downstream into sentences) for non-streaming backends."""
-        if self.stream_llm is not None:
-            return self.stream_llm(g.system_prompt, g.user_prompt)
-        return iter([self.llm_fn(g.system_prompt, g.user_prompt)])
-
-    def _speak_bytes_blocking(self, text: str):
-        if not self.tts or self.args.no_speak:
-            return
-        from local.audio import play_wav_bytes
-
-        play_wav_bytes(self.tts.synthesize(text, self.out_lang))
-
     def run_once_stream(self, mic) -> bool:
-        import queue
-        import threading
-
         from local.audio import play_wav_bytes
-        from pocketinfer.specialist.grounding import (
-            REFUSAL_TEXT, clean_answer, is_refusal_response, iter_sentences,
-        )
+        from pocketinfer.specialist import speak_stream
 
         T = {}
         t0 = time.time()
@@ -167,74 +149,32 @@ class LoopHarness:
         if not raw:
             print("[skip] nothing heard.")
             return False
+        query_en = self._translate_query(raw, T)
 
-        query_en = raw
-        if self.in_lang != "en":
-            ts = time.time()
-            query_en = self.mt.translate(raw, self.in_lang, "en")
-            T["mt_in"] = time.time() - ts
-            print(f"[2 MT  ] {self.in_lang}->en -> {query_en!r}")
+        header = {"printed": False}
 
-        # embed + retrieve + ground (no LLM yet)
-        ts = time.time()
-        g = self.engine.prepare(query_en)
-        T["prepare"] = time.time() - ts
-        if g.refused:
-            print(f"[3 SPEC] REFUSED — {g.reason}")
-            text = REFUSAL_TEXT
-            if self.out_lang != "en" and self.mt.name != "none":
-                text = self.mt.translate(REFUSAL_TEXT, "en", self.out_lang)
-            self._speak_bytes_blocking(text)
-            T["TOTAL"] = time.time() - t0
-            print(f"[time ] end-to-end: {_fmt_timings(T)}")
-            return True
+        def on_sentence(sr):
+            if sr.refused:
+                print(f"[3 SPEC] REFUSED — {sr.reason}")
+                return
+            if not header["printed"]:
+                print("[3 SPEC] streaming:")
+                for c in sr.citations:
+                    print(f"          · {c}")
+                header["printed"] = True
+            print(f"   · {sr.spoken_text}")
 
-        print(f"[3 SPEC] ({g.intent}) streaming:")
-        for c in g.citations:
-            print(f"          · {c}")
-
-        # Ordered player thread: playback (no GPU) overlaps generation/MT/TTS.
-        speaking = bool(self.tts) and not self.args.no_speak
-        q: "queue.Queue" = queue.Queue()
-        marks = {"first_audio": None}
-
-        def _player():
-            while True:
-                item = q.get()
-                if item is None:
-                    q.task_done()
-                    break
-                if marks["first_audio"] is None:
-                    marks["first_audio"] = time.time() - t0
-                play_wav_bytes(item)
-                q.task_done()
-
-        pt = threading.Thread(target=_player, daemon=True)
-        if speaking:
-            pt.start()
-
-        n = 0
-        for i, sentence in enumerate(iter_sentences(self._stream_source(g))):
-            if i == 0 and is_refusal_response(sentence):
-                print("[3 SPEC] REFUSED — model reported no answer in source")
-                self._speak_bytes_blocking(REFUSAL_TEXT)
-                break
-            text = clean_answer(sentence)
-            if not text:
-                continue
-            out = text
-            if self.out_lang != "en":
-                out = self.mt.translate(text, "en", self.out_lang)  # per-sentence: serial to :11400
-            print(f"   · {out}")
-            if speaking:
-                q.put(self.tts.synthesize(out, self.out_lang))  # serial synth, ordered play
-            n += 1
+        speaking = self.tts_provider is not None
+        play_fn = play_wav_bytes if speaking else (lambda _b: None)
+        results, first_audio = speak_stream(
+            self.engine.stream_answer(query_en, target_language=self.out_lang),
+            play_fn, on_sentence,
+        )
 
         if speaking:
-            q.put(None)
-            pt.join()
-            T["first_audio"] = marks["first_audio"]
+            T["first_audio"] = first_audio
         T["TOTAL"] = time.time() - t0
+        n = sum(1 for r in results if not r.refused)
         print(f"[time ] end-to-end: {_fmt_timings(T)}  (sentences={n})")
         return True
 

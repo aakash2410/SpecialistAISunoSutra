@@ -69,3 +69,46 @@ def test_tts_hook_receives_spoken_text(make_engine):
 def test_min_score_defaults_from_manifest(engine):
     # TF-IDF index bakes recommended_min_score=0.10 into the manifest.
     assert engine.min_score == 0.10
+
+
+# --- streaming API ----------------------------------------------------------
+def test_stream_answer_yields_sentences_with_citations(engine):
+    from pocketinfer.specialist import SentenceResult
+
+    results = list(engine.stream_answer("What is photosynthesis?"))
+    assert len(results) >= 1
+    assert all(isinstance(r, SentenceResult) for r in results)
+    assert not results[0].refused
+    assert results[0].citations  # first item carries citations
+    assert all("." in r.text_en or "!" in r.text_en or r.index == len(results) - 1 for r in results)
+
+
+def test_stream_answer_refuses_off_syllabus(engine):
+    results = list(engine.stream_answer("Tell me about the French Revolution"))
+    assert len(results) == 1
+    assert results[0].refused
+
+
+def test_stream_answer_localizes_and_synthesizes(make_engine):
+    engine = make_engine(
+        mt=lambda text, src, tgt: f"[{tgt}]{text}",
+        tts=lambda text, lang: b"WAV:" + text.encode(),
+    )
+    results = list(engine.stream_answer("How is heat transferred?", target_language="hi"))
+    assert results and not results[0].refused
+    assert results[0].text_localized.startswith("[hi]")
+    assert results[0].audio.startswith(b"WAV:[hi]")
+
+
+def test_speak_stream_overlaps_and_reports_first_audio(make_engine):
+    from pocketinfer.specialist import speak_stream
+
+    engine = make_engine(tts=lambda text, lang: b"AUDIO")
+    played = []
+    results, first_audio = speak_stream(
+        engine.stream_answer("What is photosynthesis?"),
+        play_fn=lambda b: played.append(b),
+    )
+    assert len(results) >= 1
+    assert len(played) == len(results)      # every sentence's audio was played
+    assert first_audio is not None and first_audio >= 0

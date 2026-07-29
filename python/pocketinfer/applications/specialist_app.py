@@ -35,8 +35,8 @@ from pocketinfer.models.ocr import Ocr
 from pocketinfer.models.embed import Embed
 from pocketinfer.audio import AudioPlayer
 
-from pocketinfer.specialist import SpecialistEngine
-from pocketinfer.specialist.llm import ollama_grounded_client
+from pocketinfer.specialist import SpecialistEngine, speak_stream
+from pocketinfer.specialist.llm import ollama_grounded_client, ollama_grounded_stream_client
 
 # Content lives in a data directory separate from the code, so the syllabus can be
 # refreshed without redeploying the module. Override per-device with:
@@ -84,13 +84,18 @@ class TheSpecialist(BaseApplication):
         self.ocr = Ocr()
         self.embedder = Embed(model_name=self.METADATA["models"]["embed"]["model_name"])
 
-        llm = ollama_grounded_client(self.METADATA["models"]["ollama"]["model_name"])
-        # MT + TTS are wired into the engine; the engine returns localized text
-        # and synthesized audio, the app just plays it.
+        model_name = self.METADATA["models"]["ollama"]["model_name"]
+        # Streaming is the default: the engine emits the answer sentence by
+        # sentence, and each sentence is translated + synthesized + spoken while
+        # the next one is still being generated — so the class hears the first
+        # sentence within ~a second or two instead of waiting for the whole answer.
+        # (MT is called per sentence, which also sidesteps BHASHINI NMT truncating
+        # a full paragraph.)
         self.engine = SpecialistEngine(
             index_dir=self.settings["index_dir"],
             embedder=self.embedder,
-            llm=llm,
+            llm=ollama_grounded_client(model_name),
+            stream_llm=ollama_grounded_stream_client(model_name),
             mt=lambda text, src, tgt: self.nmt.infer(text, src, tgt)["translated_text"],
             tts=lambda text, lang: base64.b64decode(self.tts.infer(text, lang)["audio_base64"]),
         )
@@ -109,6 +114,14 @@ class TheSpecialist(BaseApplication):
         threading.Thread(
             target=lambda: (time.sleep(delay), fn(*fa)), daemon=True
         ).start()
+
+    def _play_wav(self, audio: bytes):
+        """Play one WAV clip through the board speaker (used by speak_stream)."""
+        if not audio:
+            return
+        wav_obj = wave.open(BytesIO(audio), "rb")
+        with AudioPlayer(wav_obj.getframerate(), self.board.ALSA_PLAYBACK_DEVICE) as player:
+            player.play(wav_obj.readframes(wav_obj.getnframes()))
 
     def _capture_request(self):
         """Return (request_text_en, raw_text) from voice or camera."""
@@ -165,28 +178,28 @@ class TheSpecialist(BaseApplication):
                 self.logger.info("Request (en): %s", request_en)
 
                 self.board.statusbar("Running: Retrieve + LLM")
-                result = self.engine.answer(
-                    request_en, target_language=self.settings["output_language"]
-                )
-
-                if result.refused:
-                    self.board.bottom_text("⚠ " + result.answer_localized)
-                    self.logger.info("Refused: %s", result.reason)
-                else:
-                    self.board.bottom_text(result.spoken_text)
-                    src = result.citations[0] if result.citations else ""
-                    self.delayed(self.board.statusbar, "Source: " + src, delay=0.1)
-                    self.logger.info("Answer: %s | sources=%s", result.answer_en, result.citations)
-
-                # Speak the answer (engine already synthesized it via the TTS client).
-                self.board.statusbar("Running: Playback")
                 self.board.led_animation(0)
-                if result.audio:
-                    wav_obj = wave.open(BytesIO(result.audio), "rb")
-                    with AudioPlayer(wav_obj.getframerate(), self.board.ALSA_PLAYBACK_DEVICE) as player:
-                        player.play(wav_obj.readframes(wav_obj.getnframes()))
+                out_lang = self.settings["output_language"]
 
-                self.logger.debug("Timings: %s", result.timings)
+                # Stream the answer: each sentence is spoken as it's ready, while
+                # the next is still being produced. speak_stream plays audio on a
+                # background thread; on_sentence updates the screen.
+                def on_sentence(sr):
+                    if sr.refused:
+                        self.board.bottom_text("⚠ " + sr.spoken_text)
+                        self.logger.info("Refused: %s", sr.reason)
+                        return
+                    self.board.bottom_text(sr.spoken_text)
+                    if sr.index == 0 and sr.citations:
+                        self.delayed(self.board.statusbar, "Source: " + sr.citations[0], delay=0.1)
+                    self.logger.info("Sentence[%d]: %s", sr.index, sr.text_en)
+
+                results, first_audio = speak_stream(
+                    self.engine.stream_answer(request_en, target_language=out_lang),
+                    self._play_wav, on_sentence,
+                )
+                self.logger.debug("Streamed %d sentences, first_audio=%.2fs",
+                                  len(results), first_audio or 0.0)
             except KeyboardInterrupt:
                 self.logger.info("Exit")
                 self.board.clear_screen()
