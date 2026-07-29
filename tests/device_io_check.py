@@ -140,14 +140,23 @@ def get_board():
     return Board.get_board()
 
 
-def check_board():
+def check_board_light():
+    """Report the board WITHOUT instantiating it.
+
+    Constructing the board starts the camera/UI (and a multiprocessing
+    forkserver that prints a noisy traceback at exit), which a health check
+    shouldn't do — so for the auto pass we just read the device-tree model. The
+    full board is only built for the interactive I/O tests.
+    """
+    model_path = "/proc/device-tree/model"
+    if not os.path.exists(model_path):
+        return record("board", SKIP, "not on device hardware (no /proc/device-tree/model)")
     try:
-        board = get_board()
-        record("board detected", PASS, type(board).__name__)
-        return board
+        with open(model_path, "rb") as f:
+            model = f.read().replace(b"\x00", b"").decode(errors="replace").strip()
+        record("board", PASS, model)
     except Exception as e:  # noqa: BLE001
-        record("board detected", SKIP, f"not on device hardware ({e})")
-        return None
+        record("board", WARN, str(e))
 
 
 # --------------------------------------------------------- interactive I/O
@@ -273,12 +282,16 @@ def main():
     check_index(args.index)
     check_services()
     check_resources()
-    board = check_board()
+    check_board_light()  # lightweight — does not start the camera/UI
 
     if args.interactive:
-        if board is None:
-            record("interactive I/O", SKIP, "no board detected")
-        else:
+        # Only now do we build the real board (starts camera/UI) for physical I/O.
+        board = None
+        try:
+            board = get_board()
+        except Exception as e:  # noqa: BLE001
+            record("interactive I/O", SKIP, f"board unavailable: {e}")
+        if board is not None:
             run_interactive(board)
 
     fails = sum(1 for r in RESULTS if r["status"] == FAIL)
@@ -292,4 +305,10 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    _code = main()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    # The board/UI starts background workers (camera, a multiprocessing forkserver)
+    # with no clean shutdown hook; os._exit avoids a noisy teardown traceback
+    # printing after the results.
+    os._exit(_code)
