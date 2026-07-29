@@ -6,6 +6,7 @@ from pocketinfer.specialist.grounding import (
     REFUSAL_SENTINEL,
     build_grounding,
     classify_intent,
+    clean_answer,
     is_refusal_response,
 )
 from pocketinfer.specialist.vector_index import Retrieved
@@ -58,7 +59,18 @@ def test_grounded_prompt_contains_sources_and_refusal_instruction():
     (REFUSAL_SENTINEL, True),
     (f"  {REFUSAL_SENTINEL}  ", True),
     ("", True),
+    ("NO_ANSWER_IN_SOURCE\n\nPlease clarify what you mean.", True),  # leads with sentinel
     ("Photosynthesis is the process by which...", False),
+    ("Heat flows from hot to cold.\n\n(No answer in source)", False),  # trailing leak, not a refusal
 ])
 def test_generation_gate_detects_refusal(text, is_refusal):
     assert is_refusal_response(text) is is_refusal
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("Heat flows from hot to cold.\n\n(No answer in source)", "Heat flows from hot to cold."),
+    ("Plants make food. NO_ANSWER_IN_SOURCE", "Plants make food."),
+    ("A clean answer.", "A clean answer."),
+])
+def test_clean_answer_strips_leaked_refusal(raw, expected):
+    assert clean_answer(raw) == expected

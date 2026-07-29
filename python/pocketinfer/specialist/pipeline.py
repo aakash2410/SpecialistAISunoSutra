@@ -28,6 +28,7 @@ from ..models.embed import DEFAULT_MODEL_NAME, Embed
 from .grounding import (
     REFUSAL_TEXT,
     build_grounding,
+    clean_answer,
     is_refusal_response,
 )
 from .vector_index import Retrieved, VectorIndex
@@ -124,6 +125,8 @@ class SpecialistEngine:
             g.reason = f"LLM reported insufficient information (said: {snippet!r})."
             return self._finalize_refusal(request, target_language, g, passages, t)
 
+        # Strip any leaked refusal note the model appended to a valid answer.
+        llm_text = clean_answer(llm_text)
         answer_localized = llm_text
         if self.mt and target_language and target_language.lower() != "en":
             ts = time.time()

@@ -128,9 +128,26 @@ def build_grounding(
     )
 
 
+# Matches the sentinel and natural-language variants ("No answer in source"),
+# with underscores or spaces — small models render it inconsistently.
+_REFUSAL_RE = re.compile(r"no[_ ]answer[_ ]in[_ ]source", re.IGNORECASE)
+
+
 def is_refusal_response(llm_text: str) -> bool:
-    """True if the LLM signalled it could not answer from the sources."""
+    """True if the LLM refused — i.e. it LEADS with the sentinel (or is empty).
+
+    Anchored to the start so an otherwise-good answer that merely *trails* a
+    stray 'No answer in source' note is treated as an answer (and cleaned), not
+    a refusal — a real refusal begins with the sentinel.
+    """
     t = (llm_text or "").strip()
     if not t:
         return True
-    return REFUSAL_SENTINEL.lower() in t.lower()
+    return _REFUSAL_RE.match(t) is not None
+
+
+def clean_answer(llm_text: str) -> str:
+    """Strip any leaked refusal phrase/sentinel from a valid answer."""
+    cleaned = _REFUSAL_RE.sub("", llm_text or "")
+    cleaned = re.sub(r"\(\s*\)|\[\s*\]", "", cleaned)   # drop emptied ()/[] left behind
+    return cleaned.strip()
