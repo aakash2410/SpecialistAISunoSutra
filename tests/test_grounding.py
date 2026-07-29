@@ -71,6 +71,8 @@ def test_generation_gate_detects_refusal(text, is_refusal):
     ("Heat flows from hot to cold.\n\n(No answer in source)", "Heat flows from hot to cold."),
     ("Plants make food. NO_ANSWER_IN_SOURCE", "Plants make food."),
     ("A clean answer.", "A clean answer."),
+    ("Here's an explanation of photosynthesis:\n\nPlants make food.", "Plants make food."),
+    ("Here is how it works: heat rises.", "heat rises."),
 ])
-def test_clean_answer_strips_leaked_refusal(raw, expected):
+def test_clean_answer_strips_preamble_and_refusal(raw, expected):
     assert clean_answer(raw) == expected

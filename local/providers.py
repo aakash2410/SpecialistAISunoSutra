@@ -126,20 +126,20 @@ class BhashiniMT:
         if src_lang.lower() == tgt_lang.lower():
             return text
         src, tgt = self._code(src_lang), self._code(tgt_lang)
-        try:
-            return self._nmt.infer(text, src, tgt)["translated_text"]
-        except Exception as e:  # noqa: BLE001
-            # BHASHINI NMT is sentence-tuned and can 500 on a long/multiline
-            # paragraph — translate sentence by sentence and stitch back.
-            logger.warning("NMT failed on full text (%s); retrying per sentence", e)
-            sentences = [s.strip() for s in re.split(r"(?<=[.!?।])\s+", text) if s.strip()]
-            out = []
-            for s in sentences:
-                try:
-                    out.append(self._nmt.infer(s, src, tgt)["translated_text"])
-                except Exception:  # noqa: BLE001
-                    out.append(s)  # leave that sentence untranslated rather than fail
-            return " ".join(out)
+        # ALWAYS translate sentence by sentence. BHASHINI NMT is sentence-tuned and
+        # silently truncates a multi-sentence paragraph to the first segment (no
+        # error), so a single call would drop most of the answer.
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?।])\s+", text.strip()) if s.strip()]
+        if not sentences:
+            return text
+        out = []
+        for s in sentences:
+            try:
+                out.append(self._nmt.infer(s, src, tgt)["translated_text"])
+            except Exception as e:  # noqa: BLE001
+                logger.warning("NMT failed on a sentence (%s); leaving it untranslated", e)
+                out.append(s)
+        return " ".join(out)
 
 
 # --------------------------------------------------------------------------- TTS

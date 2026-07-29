@@ -119,7 +119,13 @@ def play_wav_bytes(data: bytes) -> None:
     try:
         tmp.write(data)
         tmp.close()
-        player = "afplay" if sys.platform == "darwin" else "aplay"
-        subprocess.run([player, tmp.name], check=False)
+        if sys.platform == "darwin":
+            cmd = ["afplay", tmp.name]
+        else:
+            # Route to a specific ALSA device if given (find yours with `aplay -l`,
+            # e.g. SPECIALIST_ALSA_DEVICE=hw:1,0); otherwise the default device.
+            dev = os.environ.get("SPECIALIST_ALSA_DEVICE")
+            cmd = ["aplay"] + (["-D", dev] if dev else []) + [tmp.name]
+        subprocess.run(cmd, check=False)
     finally:
         os.unlink(tmp.name)

@@ -132,6 +132,11 @@ def build_grounding(
 # with underscores or spaces — small models render it inconsistently.
 _REFUSAL_RE = re.compile(r"no[_ ]answer[_ ]in[_ ]source", re.IGNORECASE)
 
+# Small models like to open with a meta preamble ("Here's an explanation ...:").
+# It's not part of the answer and just wastes MT/TTS, so strip a leading
+# "Here's/Here is <...>:" clause.
+_PREAMBLE_RE = re.compile(r"^\s*here(?:['’`]s| is)\b[^:\n]{0,80}:\s*", re.IGNORECASE)
+
 
 def is_refusal_response(llm_text: str) -> bool:
     """True if the LLM refused — i.e. it LEADS with the sentinel (or is empty).
@@ -147,7 +152,8 @@ def is_refusal_response(llm_text: str) -> bool:
 
 
 def clean_answer(llm_text: str) -> str:
-    """Strip any leaked refusal phrase/sentinel from a valid answer."""
-    cleaned = _REFUSAL_RE.sub("", llm_text or "")
+    """Strip a meta preamble and any leaked refusal phrase from a valid answer."""
+    cleaned = _PREAMBLE_RE.sub("", llm_text or "")
+    cleaned = _REFUSAL_RE.sub("", cleaned)
     cleaned = re.sub(r"\(\s*\)|\[\s*\]", "", cleaned)   # drop emptied ()/[] left behind
     return cleaned.strip()
