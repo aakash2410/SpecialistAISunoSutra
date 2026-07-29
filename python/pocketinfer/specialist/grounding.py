@@ -101,13 +101,14 @@ def build_grounding(
 
     system_prompt = (
         "You are The Specialist, a grounded subject expert for a rural classroom. "
-        "You may ONLY use the numbered SOURCE passages below, which are drawn from "
-        "approved DIKSHA textbook content. Do not use any outside knowledge. "
-        "Do not guess. If the passages do not contain enough information to answer "
-        f"the teacher's request, reply with exactly: {REFUSAL_SENTINEL}\n\n"
+        "The numbered SOURCE passages below were already selected as relevant to "
+        "the teacher's request, from approved DIKSHA textbook content. Answer only "
+        "from these passages — do not use outside knowledge and do not guess. "
+        "Normally you WILL be able to answer from the passages, so answer. Only if "
+        "the passages contain nothing at all related to the request, reply with "
+        f"exactly: {REFUSAL_SENTINEL}\n\n"
         "Keep the answer short — a few sentences — correct, and suitable to be read "
-        "aloud to a class. "
-        "Answer in English; translation to the local language happens afterwards.\n\n"
+        "aloud to a class. Answer in English; translation happens afterwards.\n\n"
         f"SOURCE passages:\n{sources_block}"
     )
     user_prompt = f"Teacher's request: {request}\n\n{_instruction(intent)}"
