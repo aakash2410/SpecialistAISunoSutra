@@ -33,9 +33,21 @@ from pocketinfer.specialist import SpecialistEngine  # noqa: E402
 
 from local.providers import make_asr, make_mt, make_tts, make_llm  # noqa: E402
 
-DEFAULT_INDEX = os.path.join(
-    os.path.dirname(__file__), "..", "corpus", "diksha_g7_science", "index",
-)
+
+def _resolve_index() -> str:
+    """Canonical index: $SPECIALIST_INDEX_DIR > diksha_g7_all > committed reference."""
+    env = os.environ.get("SPECIALIST_INDEX_DIR")
+    if env:
+        return env
+    root = os.path.join(os.path.dirname(__file__), "..", "corpus")
+    for name in ("diksha_g7_all", "diksha_g7_science"):
+        p = os.path.join(root, name, "index")
+        if os.path.exists(os.path.join(p, "embeddings.npy")):
+            return p
+    return os.path.join(root, "diksha_g7_science", "index")
+
+
+DEFAULT_INDEX = _resolve_index()
 
 
 def _fmt_timings(t: dict) -> str:

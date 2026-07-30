@@ -34,6 +34,14 @@ sentence-transformers>=2.2.0
 ansible-core
 
 
+# --- DIKSHA harvest (ingest/diksha_pull.py --mode online) ---------------------
+# Downloads DIKSHA PDFs and extracts their text layer. ~80% of DIKSHA PDFs are
+# scanned images; to OCR those, also install Tesseract (system pkg) and run the
+# harvest with --ocr.
+pymupdf
+requests
+
+
 # --- optional -----------------------------------------------------------------
 # Only needed to drive the device's BHASHINI ASR/MT/TTS from the laptop, i.e.
 #   python -m local.voice_loop --asr bhashini --mt bhashini --tts bhashini

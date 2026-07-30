@@ -39,12 +39,22 @@ from pocketinfer.specialist import SpecialistEngine, speak_stream
 from pocketinfer.specialist.llm import ollama_grounded_client, ollama_grounded_stream_client
 
 # Content lives in a data directory separate from the code, so the syllabus can be
-# refreshed without redeploying the module. Override per-device with:
-#   pocketinfer-service --setting index_dir=/path/to/index
-DEFAULT_INDEX = os.environ.get(
-    "SPECIALIST_INDEX_DIR",
-    "/opt/specialist/corpus/diksha_g7_science/index",
-)
+# refreshed without redeploying the module. Canonical index location:
+#   $SPECIALIST_INDEX_DIR  >  diksha_g7_all  >  the committed reference corpus.
+# Override per-device with: pocketinfer-service --setting index_dir=/path/to/index
+def _resolve_index() -> str:
+    env = os.environ.get("SPECIALIST_INDEX_DIR")
+    if env:
+        return env
+    base = "/opt/specialist/corpus"
+    for name in ("diksha_g7_all", "diksha_g7_science"):
+        p = os.path.join(base, name, "index")
+        if os.path.exists(os.path.join(p, "embeddings.npy")):
+            return p
+    return os.path.join(base, "diksha_g7_all", "index")
+
+
+DEFAULT_INDEX = _resolve_index()
 
 
 @RegisterApplication({

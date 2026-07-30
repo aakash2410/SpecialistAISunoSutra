@@ -25,9 +25,24 @@ sys.path.insert(0, os.path.join(os.path.abspath(os.path.dirname(__file__)), "pyt
 
 from pocketinfer.specialist import SpecialistEngine  # noqa: E402
 
-DEFAULT_INDEX = os.path.join(
-    os.path.dirname(__file__), "corpus", "diksha_g7_science", "index",
-)
+
+def resolve_index(corpus_root: str) -> str:
+    """The single canonical index location.
+
+    Precedence: $SPECIALIST_INDEX_DIR  >  the freshly-built diksha_g7_all  >  the
+    committed reference corpus. Set the env var to pin one folder permanently.
+    """
+    env = os.environ.get("SPECIALIST_INDEX_DIR")
+    if env:
+        return env
+    for name in ("diksha_g7_all", "diksha_g7_science"):
+        p = os.path.join(corpus_root, name, "index")
+        if os.path.exists(os.path.join(p, "embeddings.npy")):
+            return p
+    return os.path.join(corpus_root, "diksha_g7_science", "index")
+
+
+DEFAULT_INDEX = resolve_index(os.path.join(os.path.dirname(__file__), "corpus"))
 
 CANNED = [
     ("Mujhe photosynthesis samjhaye, Hindi mein.", None),   # in-corpus, simplify
