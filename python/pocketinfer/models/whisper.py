@@ -54,16 +54,19 @@ class Whisper:
         """Convert 16-bit little-endian PCM to the float32 [-1, 1] array Whisper wants."""
         return np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
 
-    def transcribe(self, audio, language: Optional[str] = "en") -> str:
-        """Transcribe audio to text.
+    def transcribe(self, audio, language: Optional[str] = "en", task: str = "transcribe") -> str:
+        """Speech to text.
 
         ``audio`` may be a float32 numpy array (mono, 16 kHz), 16-bit PCM bytes,
         or a path/file. ``language`` is ignored for ``.en`` models (English-only).
+        ``task``: 'transcribe' (same language) or 'translate' (any language -> English,
+        multilingual models only) — the latter turns Hindi speech into an English
+        query in one step, no separate MT.
         """
         if isinstance(audio, (bytes, bytearray)):
             audio = self.pcm16_to_float32(bytes(audio))
         lang = None if self.model_size.endswith(".en") else language
-        segments, _info = self._model.transcribe(audio, language=lang, beam_size=5)
+        segments, _info = self._model.transcribe(audio, language=lang, task=task, beam_size=5)
         return "".join(seg.text for seg in segments).strip()
 
     # --- pocketinfer model contract --------------------------------------

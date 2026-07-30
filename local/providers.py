@@ -99,7 +99,8 @@ class BhashiniASR:
 class WhisperASR:
     name = "whisper"
 
-    def __init__(self, model_size: str = "small.en", model_dir: str | None = None):
+    def __init__(self, model_size: str = "small.en", model_dir: str | None = None,
+                 task: str = "transcribe"):
         try:
             from pocketinfer.models.whisper import Whisper
         except Exception as e:  # noqa: BLE001
@@ -109,10 +110,11 @@ class WhisperASR:
                 f"(error: {e})"
             )
         self._w = Whisper(model_size=model_size, model_dir=model_dir)
+        self.task = task  # 'transcribe' | 'translate' (non-English speech -> English)
 
     def transcribe(self, clip: AudioClip, language: str = "en") -> str:
         audio = self._w.pcm16_to_float32(clip.pcm)
-        return self._w.transcribe(audio, language=language)
+        return self._w.transcribe(audio, language=language, task=self.task)
 
 
 # ---------------------------------------------------------------------------- MT
