@@ -19,3 +19,15 @@ numpy<2
 # so the device still functions (at lower retrieval quality).
 tokenizers
 onnxruntime ; platform_machine != "aarch64"
+
+# Whisper ASR (context-aware English speech-to-text — handles science vocabulary
+# the small Vosk model mangles). Backend is CTranslate2, which is ALREADY on the
+# device (CUDA build, used by BHASHINI NMT).
+# IMPORTANT on the Jetson: install faster-whisper WITHOUT letting pip replace that
+# CUDA ctranslate2 with a CPU PyPI wheel:
+#     pip3 install --user faster-whisper
+#     python3 -c "import ctranslate2; print(ctranslate2.__version__)"   # verify unchanged
+# If ctranslate2 got downgraded, reinstall the device's CUDA wheel
+# (rootfs/roles/indic/files/ctranslate2-*.whl). If Whisper isn't installed the
+# app falls back to Vosk automatically.
+faster-whisper

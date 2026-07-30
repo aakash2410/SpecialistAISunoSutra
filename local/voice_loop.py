@@ -49,7 +49,8 @@ class LoopHarness:
         self.out_lang = args.out_lang.lower()
 
         # Providers (each is swappable via the factory names).
-        self.asr = None if args.text else make_asr(args.asr, vosk_model=args.vosk_model)
+        self.asr = None if args.text else make_asr(
+            args.asr, vosk_model=args.vosk_model, whisper_model=args.whisper_model)
         self.mt = make_mt(args.mt)                       # used for query-side translation too
         self.tts_provider = None if args.no_speak else make_tts(args.tts)
 
@@ -215,7 +216,7 @@ def main():
     ap.add_argument("--say-question", default=None, help="synthesize this question with 'say' then run it")
     ap.add_argument("--say-voice", default=None, help="voice for --say-question (e.g. Lekha for Hindi)")
     # providers (swappable)
-    ap.add_argument("--asr", default="vosk", help="vosk|bhashini")
+    ap.add_argument("--asr", default="vosk", help="vosk|whisper|bhashini")
     ap.add_argument("--mt", default="none", help="none|bhashini")
     ap.add_argument("--tts", default="say", help="say|bhashini")
     ap.add_argument("--llm", default="extractive", help="extractive|ollama")
@@ -232,6 +233,7 @@ def main():
     ap.add_argument("--embed-prefer", default="auto",
                     help="auto|onnx|tfidf|sentence-transformers — match the index's embedder")
     ap.add_argument("--vosk-model", default=None, help="path to a Vosk model dir")
+    ap.add_argument("--whisper-model", default="small.en", help="faster-whisper model (e.g. small.en, base.en)")
     ap.add_argument("--ollama-model", default="llama3.2:1b")
     ap.add_argument("--log-level", default="WARNING")
     args = ap.parse_args()

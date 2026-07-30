@@ -96,6 +96,25 @@ class BhashiniASR:
         return self._asr.infer(clip.get_wav_data(), language).get("text", "").strip()
 
 
+class WhisperASR:
+    name = "whisper"
+
+    def __init__(self, model_size: str = "small.en", model_dir: str | None = None):
+        try:
+            from pocketinfer.models.whisper import Whisper
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(
+                "faster-whisper not installed. Install laptop deps "
+                "(pip install faster-whisper) or the module requirements.\n"
+                f"(error: {e})"
+            )
+        self._w = Whisper(model_size=model_size, model_dir=model_dir)
+
+    def transcribe(self, clip: AudioClip, language: str = "en") -> str:
+        audio = self._w.pcm16_to_float32(clip.pcm)
+        return self._w.transcribe(audio, language=language)
+
+
 # ---------------------------------------------------------------------------- MT
 class NoopMT:
     """Passthrough — MT is optional. Keeps the loop running English-only."""
@@ -224,14 +243,16 @@ def _which(cmd: str) -> bool:
     return which(cmd) is not None
 
 
-ASR_PROVIDERS = {"vosk": VoskASR, "bhashini": BhashiniASR}
+ASR_PROVIDERS = {"vosk": VoskASR, "bhashini": BhashiniASR, "whisper": WhisperASR}
 MT_PROVIDERS = {"none": NoopMT, "bhashini": BhashiniMT}
 TTS_PROVIDERS = {"say": MacSayTTS, "bhashini": BhashiniTTS}
 
 
-def make_asr(name: str, vosk_model: str | None = None):
+def make_asr(name: str, vosk_model: str | None = None, whisper_model: str = "small.en"):
     if name == "vosk":
         return VoskASR(model_path=vosk_model)
+    if name == "whisper":
+        return WhisperASR(model_size=whisper_model)
     if name in ASR_PROVIDERS:
         return ASR_PROVIDERS[name]()
     raise ValueError(f"Unknown asr '{name}' (choose: {', '.join(ASR_PROVIDERS)})")

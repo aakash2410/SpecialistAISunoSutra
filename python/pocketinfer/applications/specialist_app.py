@@ -60,6 +60,10 @@ DEFAULT_INDEX = os.environ.get(
         # loads in ~8s, and grounds cleanly (grounding is prompt-based). Pull with:
         #   ollama pull llama3.2:1b
         "ollama": {"model_name": "llama3.2:1b"},
+        # Whisper (faster-whisper) is the primary English ASR — context-aware, so
+        # it handles science vocabulary the small Vosk model mangles. Vosk stays
+        # as a fallback if Whisper isn't installed/downloaded.
+        "whisper": {"model_size": "small.en"},
         "vosk": {"model_name": "vosk-model-small-en-us-0.15"},
         "asr": {},
         "nmt": {},
@@ -83,6 +87,16 @@ class TheSpecialist(BaseApplication):
         self.tts = Tts()
         self.ocr = Ocr()
         self.embedder = Embed(model_name=self.METADATA["models"]["embed"]["model_name"])
+
+        # Whisper for English ASR, with a graceful fallback to Vosk.
+        self.whisper = None
+        try:
+            from pocketinfer.models.whisper import Whisper
+
+            self.whisper = Whisper(model_size=self.METADATA["models"]["whisper"]["model_size"])
+            self.logger.info("English ASR: Whisper (%s)", self.METADATA["models"]["whisper"]["model_size"])
+        except Exception as e:  # noqa: BLE001
+            self.logger.warning("Whisper unavailable (%s); English ASR falls back to Vosk", e)
 
         model_name = self.METADATA["models"]["ollama"]["model_name"]
         # Streaming is the default: the engine emits the answer sentence by
@@ -116,12 +130,38 @@ class TheSpecialist(BaseApplication):
         ).start()
 
     def _play_wav(self, audio: bytes):
-        """Play one WAV clip through the board speaker (used by speak_stream)."""
+        """Play one WAV clip through the board speaker (used by speak_stream).
+
+        Not every board exposes ALSA_PLAYBACK_DEVICE (the devboard doesn't), so
+        resolve the device robustly and fall back to `aplay` (which handles the
+        USB-audio mono->stereo conversion via plughw).
+        """
         if not audio:
             return
+        device = (os.environ.get("SPECIALIST_ALSA_DEVICE")
+                  or getattr(self.board, "ALSA_PLAYBACK_DEVICE", None))
         wav_obj = wave.open(BytesIO(audio), "rb")
-        with AudioPlayer(wav_obj.getframerate(), self.board.ALSA_PLAYBACK_DEVICE) as player:
-            player.play(wav_obj.readframes(wav_obj.getnframes()))
+        if device:
+            try:
+                with AudioPlayer(wav_obj.getframerate(), device) as player:
+                    player.play(wav_obj.readframes(wav_obj.getnframes()))
+                return
+            except Exception as e:  # noqa: BLE001
+                self.logger.warning("AudioPlayer(%s) failed (%s); falling back to aplay", device, e)
+        # Fallback: aplay to the configured device (plughw handles format conversion).
+        import subprocess
+        import tempfile
+
+        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        try:
+            tmp.write(audio)
+            tmp.close()
+            dev = device or "plughw:0,0"
+            if dev.startswith("hw:"):
+                dev = "plug" + dev
+            subprocess.run(["aplay", "-D", dev, tmp.name], check=False)
+        finally:
+            os.unlink(tmp.name)
 
     def _capture_request(self):
         """Return (request_text_en, raw_text) from voice or camera."""
@@ -132,11 +172,15 @@ class TheSpecialist(BaseApplication):
             raw = self.ocr.infer(img, in_lang).get("text", "").strip()
         else:
             self.board.statusbar("Running: ASR")
+            audio_data = self.board.audio.to_audio_data()
             if in_lang != "en":
-                wav = self.board.audio.to_audio_data().get_wav_data()
-                raw = self.asr.infer(wav, in_lang).get("text", "").strip()
+                raw = self.asr.infer(audio_data.get_wav_data(), in_lang).get("text", "").strip()
+            elif self.whisper is not None:
+                # 16 kHz mono int16 PCM -> Whisper (context-aware, handles sci vocab)
+                pcm = audio_data.get_raw_data(convert_rate=16000, convert_width=2)
+                raw = self.whisper.transcribe(pcm, language="en").strip()
             else:
-                raw = self.vosk.recognize(self.board.audio.to_audio_data())["text"].strip()
+                raw = self.vosk.recognize(audio_data)["text"].strip()
 
         if not raw:
             return "", ""

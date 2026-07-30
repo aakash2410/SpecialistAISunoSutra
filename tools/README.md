@@ -28,6 +28,33 @@ embedder falls back to TF-IDF so the device keeps working.
 
 ---
 
+## Whisper ASR (context-aware English speech-to-text)
+
+Replaces the small Vosk model (which mangles science vocabulary — "photosynthesis"
+→ "photo sensis") with `faster-whisper`, which attends over the whole utterance.
+Backend is CTranslate2, **already on the device** (CUDA build, used by BHASHINI).
+
+```bash
+# 1. install faster-whisper WITHOUT clobbering the device's CUDA ctranslate2:
+pip3 install --user faster-whisper
+python3 -c "import ctranslate2; print(ctranslate2.__version__)"   # verify unchanged
+#   if it got replaced by a CPU wheel, reinstall the CUDA one:
+#   pip3 install --user --force-reinstall rootfs/roles/indic/files/ctranslate2-*.whl
+
+# 2. pre-fetch the model once (online) into the device data dir:
+mkdir -p /opt/specialist/models/whisper
+python3 -c "from pocketinfer.models.whisper import Whisper; Whisper(model_size='small.en', model_dir='/opt/specialist/models/whisper')"
+
+# 3. test it
+python3 -m local.voice_loop --from-wav question.wav --asr whisper --embed-prefer <match-index>
+```
+
+The app uses Whisper for English automatically (`input_language=en`) and falls
+back to Vosk if faster-whisper isn't installed. Set `SPECIALIST_WHISPER_DIR` to
+override the model location.
+
+---
+
 # Remote-access tools
 
 ## `tailscale_access.py`

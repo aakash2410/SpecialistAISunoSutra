@@ -82,3 +82,20 @@ def test_vosk_asr_conforms_when_model_present():
     except RuntimeError as e:
         pytest.skip(f"vosk model not present: {e}")
     assert isinstance(asr, ASRProvider)
+
+
+def test_whisper_is_a_known_asr_backend():
+    from local.providers import ASR_PROVIDERS
+
+    assert "whisper" in ASR_PROVIDERS
+
+
+def test_whisper_pcm_to_float32_conversion():
+    import numpy as np
+
+    from pocketinfer.models.whisper import Whisper
+
+    pcm = np.array([0, 16384, -16384, 32767], dtype=np.int16).tobytes()
+    f = Whisper.pcm16_to_float32(pcm)
+    assert f.dtype == np.float32
+    assert f[0] == 0.0 and abs(f[1] - 0.5) < 1e-3 and abs(f[2] + 0.5) < 1e-3
