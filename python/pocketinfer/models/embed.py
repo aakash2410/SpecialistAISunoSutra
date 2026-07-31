@@ -141,20 +141,25 @@ class _OnnxE5:
         self.dim = last_dim if isinstance(last_dim, int) else 384  # e5-small hidden size
         self.onnx_path = onnx_path
 
-    def encode(self, texts: Sequence[str]) -> np.ndarray:
-        enc = self.tokenizer.encode_batch(list(texts))
-        ids = np.array([e.ids for e in enc], dtype=np.int64)
-        mask = np.array([e.attention_mask for e in enc], dtype=np.int64)
-        feeds = {"input_ids": ids, "attention_mask": mask}
-        if "token_type_ids" in self.input_names:
-            feeds["token_type_ids"] = np.zeros_like(ids)
-        last_hidden = self.session.run(None, feeds)[0]           # (B, T, H)
-        m = mask[:, :, None].astype(np.float32)
-        summed = (last_hidden * m).sum(axis=1)
-        counts = np.clip(m.sum(axis=1), 1e-9, None)
-        emb = summed / counts                                    # masked mean pool
-        emb /= np.clip(np.linalg.norm(emb, axis=1, keepdims=True), 1e-12, None)
-        return emb.astype(np.float32)
+    def encode(self, texts: Sequence[str], batch_size: int = 32) -> np.ndarray:
+        # Process in small batches: a single run() over thousands of chunks would
+        # allocate a (N, T, 384) tensor (GBs) and OOM the device at build time.
+        texts = list(texts)
+        out: List[np.ndarray] = []
+        for start in range(0, len(texts), batch_size):
+            batch = texts[start:start + batch_size]
+            enc = self.tokenizer.encode_batch(batch)
+            ids = np.array([e.ids for e in enc], dtype=np.int64)
+            mask = np.array([e.attention_mask for e in enc], dtype=np.int64)
+            feeds = {"input_ids": ids, "attention_mask": mask}
+            if "token_type_ids" in self.input_names:
+                feeds["token_type_ids"] = np.zeros_like(ids)
+            last_hidden = self.session.run(None, feeds)[0]           # (b, T, H)
+            m = mask[:, :, None].astype(np.float32)
+            emb = (last_hidden * m).sum(axis=1) / np.clip(m.sum(axis=1), 1e-9, None)  # masked mean pool
+            emb /= np.clip(np.linalg.norm(emb, axis=1, keepdims=True), 1e-12, None)
+            out.append(emb.astype(np.float32))
+        return np.vstack(out) if out else np.zeros((0, self.dim), dtype=np.float32)
 
 
 class Embed:
