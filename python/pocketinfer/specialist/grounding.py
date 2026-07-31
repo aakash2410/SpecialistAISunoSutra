@@ -104,16 +104,19 @@ def build_grounding(
         citations.append(p.citation())
     sources_block = "\n\n".join(numbered)
 
+    # NOTE: no self-refusal instruction. The retrieval gate above already rejected
+    # off-topic requests (neural similarity < threshold), so the passages here ARE
+    # relevant — a small model told it "may refuse" over-triggers on messy textbook
+    # text and drops good answers. Its only job is to answer from the passages.
     system_prompt = (
         "You are The Specialist, a grounded subject expert for a rural classroom. "
-        "The numbered SOURCE passages below were already selected as relevant to "
-        "the teacher's request, from approved DIKSHA textbook content. Answer only "
-        "from these passages — do not use outside knowledge and do not guess. "
-        "Normally you WILL be able to answer from the passages, so answer. Only if "
-        "the passages contain nothing at all related to the request, reply with "
-        f"exactly: {REFUSAL_SENTINEL}\n\n"
-        "Keep the answer short — a few sentences — correct, and suitable to be read "
-        "aloud to a class. Answer in English; translation happens afterwards.\n\n"
+        "The numbered SOURCE passages below were selected as relevant to the "
+        "teacher's request, from approved DIKSHA textbook content. Answer the "
+        "request only from these passages — do not use outside knowledge and do "
+        "not guess. They are relevant, so give a clear, direct answer to the "
+        "question; explain it in your own words — do NOT just copy the passage text. "
+        "Keep it short — a few sentences — correct, and suitable to read aloud to a "
+        "class. Answer in English; translation happens afterwards.\n\n"
         f"SOURCE passages:\n{sources_block}"
     )
     user_prompt = f"Teacher's request: {request}\n\n{_instruction(intent)}"

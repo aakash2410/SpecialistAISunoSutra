@@ -48,11 +48,11 @@ def test_answers_when_above_threshold():
     assert g.citations and g.citations[0].startswith("DIKSHA ")
 
 
-def test_grounded_prompt_contains_sources_and_refusal_instruction():
+def test_grounded_prompt_contains_sources_and_constraint():
     g = build_grounding("explain photosynthesis", [_passage(0.42)], min_score=0.10)
     assert "Photosynthesis is how plants make food." in g.system_prompt
-    assert REFUSAL_SENTINEL in g.system_prompt  # LLM told how to refuse
-    assert "only use" in g.system_prompt.lower() or "only from" in g.system_prompt.lower()
+    # Grounding constraint present; refusal is handled by the retrieval gate, not the LLM.
+    assert "only from" in g.system_prompt.lower() or "only use" in g.system_prompt.lower()
     assert "explain photosynthesis" in g.user_prompt.lower()
 
 
