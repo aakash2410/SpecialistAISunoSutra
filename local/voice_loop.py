@@ -209,9 +209,14 @@ class LoopHarness:
             return
 
         # Live mic loop.
-        from local.audio import SoundDeviceMic
+        if self.args.mic_device:
+            from local.audio import AlsaArecordMic
 
-        mic = SoundDeviceMic()
+            mic = AlsaArecordMic(self.args.mic_device)     # e.g. plughw:1,0 (Arducam mic)
+        else:
+            from local.audio import SoundDeviceMic
+
+            mic = SoundDeviceMic()
         print("\n== Specialist voice loop == (Ctrl-C to quit)")
         try:
             while True:
@@ -246,6 +251,9 @@ def main():
                     help="auto|onnx|tfidf|sentence-transformers — match the index's embedder")
     ap.add_argument("--vosk-model", default=None, help="path to a Vosk model dir")
     ap.add_argument("--whisper-model", default="small.en", help="faster-whisper model (e.g. small.en, base.en)")
+    ap.add_argument("--mic-device", default=None,
+                    help="ALSA capture device for the mic (e.g. plughw:1,0), uses arecord. "
+                         "Default: sounddevice's default input.")
     ap.add_argument("--ollama-model", default="llama3.2:1b")
     ap.add_argument("--log-level", default="WARNING")
     args = ap.parse_args()

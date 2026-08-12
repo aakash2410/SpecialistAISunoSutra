@@ -70,6 +70,44 @@ class SoundDeviceMic:
         return AudioClip(pcm=pcm, sample_rate=self.sample_rate, sample_width=2, channels=1)
 
 
+class AlsaArecordMic:
+    """Record via ALSA ``arecord`` + plughw — robust on awkward capture devices.
+
+    PortAudio/sounddevice chokes on the Suno Sutra mic (a 2-channel USB camera
+    mic at a native rate). ``plughw`` converts it to 16 kHz mono for us — exactly
+    like it does for playback — so this just shells out to arecord. Find the
+    device with ``arecord -l`` (e.g. the camera mic is usually ``plughw:1,0``).
+    Press Enter to start, Enter again to stop.
+    """
+
+    name = "arecord-mic"
+
+    def __init__(self, device: str = "plughw:1,0", sample_rate: int = DEFAULT_RATE, prompt: bool = True):
+        self.device = device
+        self.sample_rate = sample_rate
+        self.prompt = prompt
+
+    def record(self) -> AudioClip:
+        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        tmp.close()
+        if self.prompt:
+            input(f"\n[mic] Press Enter to START recording ({self.device}), then speak...")
+        proc = subprocess.Popen(
+            ["arecord", "-D", self.device, "-f", "S16_LE",
+             "-r", str(self.sample_rate), "-c", "1", tmp.name],
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            input("[mic] Recording... press Enter to STOP.\n")
+        finally:
+            proc.terminate()
+            proc.wait()
+        try:
+            return AudioClip.from_wav_file(tmp.name)
+        finally:
+            os.unlink(tmp.name)
+
+
 class WavFileMic:
     """A 'mic' that replays a WAV file — used for automated, headless testing."""
 
