@@ -19,4 +19,4 @@ Each part is swappable by name:
 | `--tts` | `bhashini` |
 | `--llm` | `ollama`, `extractive` |
 
-The embedding model and answer verifier belong in `local/models/`. Fetch them with `python3 tools/fetch_onnx_embedder.py` and `python3 tools/fetch_onnx_verifier.py`.
+The embedding model and answer verifier belong in `local/models/`. Fetch them with `python3 tools/fetch_onnx_embedder.py` and `python3 tools/fetch_onnx_verifier.py`. The safety model goes in `local/models/nli-safety-onnx`. It cannot be fetched, because it is our own fine-tune, so export it with `training/export_nli.py`.
