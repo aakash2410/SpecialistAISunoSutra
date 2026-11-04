@@ -19,7 +19,7 @@ A test that needs something this machine lacks skips and names it. A full pass n
 
 ## Current results
 
-On a Mac with Ollama, Whisper and Tesseract, without Bhashini: 42 passed, 6 skipped, 2 expected failures. The suites have not been run on the Jetson yet.
+On a Mac with Ollama, Whisper and Tesseract, without Bhashini: 44 passed, 6 skipped, 2 expected failures. The suites have not been run on the Jetson yet.
 
 The 2 expected failures are known gaps in the answer check. It accepts some common knowledge the passage never states, and it checks that a sentence is supported, not that it answers the question.
 

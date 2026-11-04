@@ -70,6 +70,97 @@ def test_engine_refuses_when_the_model_says_the_source_lacks_the_answer(make_eng
     assert result.citations == []
 
 
+# ------------------------------------------------------------------ harvesting
+def test_garbled_harvest_is_repaired_indexed_and_answered(tmp_path, tesseract_ready, e5_ready, verifier):
+    """A junk text layer goes through real OCR, into the real index, out as a cited answer."""
+    fitz = pytest.importorskip("fitz")
+    from ingest.build_index import build
+    from ingest.diksha_pull import load_local, repair_documents
+    from pocketinfer.specialist import SpecialistEngine
+
+    def scanned_pdf(body):
+        """A PDF holding only a picture of the text, like a scan."""
+        drawn = fitz.open()
+        drawn.new_page(width=600, height=400).insert_textbox((30, 30, 570, 370), body, fontsize=16)
+        scan = fitz.open()
+        scan.new_page(width=600, height=400).insert_image((0, 0, 600, 400), pixmap=drawn[0].get_pixmap(dpi=200))
+        return scan.tobytes()
+
+    body = ("Photosynthesis is the process by which green plants make their own food. "
+            "The leaves of the plant use sunlight and water for this process, and it is "
+            "how a plant gets all of the food that it needs in order to grow.")
+    readable = ("Heat flows from a hotter object to a colder object, and this is what we "
+                "call the transfer of heat. It is one of the ways in which energy moves.")
+    source = {"page": 1, "chapter": "Science", "section": "page 1", "license": "CC BY 4.0"}
+    docs = [
+        {**source, "content_id": "good", "source": "good.pdf", "text": readable},
+        {**source, "content_id": "scan", "source": "scan.pdf", "text": "\x02\x03\x04\x05\x06" * 40},
+        {**source, "content_id": "blank", "source": "blank.pdf", "text": "\uf037\uf065\uf020" * 40},
+        {**source, "content_id": "gone", "source": "gone.pdf", "text": "\x02\x03\x04\x05" * 40},
+        {**source, "content_id": "repeat", "source": "repeat.pdf", "text": readable},
+        {**source, "content_id": "plan", "source": "plan.pdf",
+         "text": "Lesson Plan. " + readable + " The teacher will divide the class into groups."},
+    ]
+
+    def fetch(url):
+        if url == "gone.pdf":
+            raise OSError("not found")
+        return scanned_pdf(body if url == "scan.pdf" else " ")
+
+    kept, report = repair_documents(docs, fetch=fetch)
+    assert [d["content_id"] for d in kept] == ["good", "scan"]
+    assert "photosynthesis" in kept[1]["text"].lower()
+    assert report == {"readable as harvested": 3, "recovered by OCR": 1,
+                      "dropped: private-use glyphs": 1, "dropped: source unavailable": 1,
+                      "dropped: duplicate": 1, "dropped: lesson plan or front matter": 1}
+
+    corpus = tmp_path / "corpus"
+    (corpus / "raw").mkdir(parents=True)
+    (corpus / "raw" / "chapters.json").write_text(json.dumps({"collection": {}, "documents": kept}))
+    assert len(load_local(str(corpus / "raw" / "chapters.json"))) == 2
+    build(str(corpus), model_name="intfloat/multilingual-e5-small", max_words=120, overlap=25)
+    result = SpecialistEngine(index_dir=str(corpus / "index"), verifier=verifier).answer("What is photosynthesis?")
+    assert not result.refused, result.reason
+    assert "scan" in result.citations[0]
+
+
+def test_repair_survives_a_corrupt_page_and_resumes(tmp_path, tesseract_ready, monkeypatch):
+    """One bad page must not lose the book, and a second run must not repeat the OCR."""
+    fitz = pytest.importorskip("fitz")
+    from ingest import diksha_pull
+
+    body = ("Heat flows from a hotter object to a colder object, and this is what we "
+            "call the transfer of heat. It is one of the ways in which energy moves.")
+    drawn = fitz.open()
+    for _ in range(2):
+        drawn.new_page(width=600, height=300).insert_textbox((30, 30, 570, 270), body, fontsize=16)
+    scan = fitz.open()
+    for page in drawn:
+        scan.new_page(width=600, height=300).insert_image((0, 0, 600, 300), pixmap=page.get_pixmap(dpi=200))
+    pdf = scan.tobytes()
+    docs = [{"source": "book.pdf", "page": n, "text": "\x02\x03\x04\x05" * 40} for n in (1, 2)]
+
+    real_get_pixmap = fitz.Page.get_pixmap
+
+    def corrupt_first_page(self, *args, **kwargs):
+        if self.number == 0:
+            raise ValueError("object is not a stream")
+        return real_get_pixmap(self, *args, **kwargs)
+
+    monkeypatch.setattr(fitz.Page, "get_pixmap", corrupt_first_page)
+    progress = str(tmp_path / "progress")
+    kept, report = diksha_pull.repair_documents(docs, fetch=lambda url: pdf, progress_path=progress)
+    assert [d["page"] for d in kept] == [2]
+    assert "Heat" in kept[0]["text"]
+    assert report == {"recovered by OCR": 1, "dropped: control characters": 1}
+
+    def must_not_fetch(url):
+        raise AssertionError("resumed run fetched a book it had already finished")
+
+    kept, report = diksha_pull.repair_documents(docs, fetch=must_not_fetch, progress_path=progress)
+    assert [d["page"] for d in kept] == [2]
+
+
 # ------------------------------------------------- answers against the sources
 SUPPORTED = "Photosynthesis is the process by which green plants make their own food."
 INVENTED = "The Moon is made of green cheese."
