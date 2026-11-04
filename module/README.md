@@ -1,80 +1,106 @@
-# The Specialist — device module
+# Installing The Specialist
 
-A **purely additive overlay** for a Suno Sutra device that already has the base
-platform installed. It adds new files only — **no base file is modified or
-overwritten**, so the platform stays upstream-updatable.
+This role installs the full software pipeline on a Jetson running JetPack 6. It does not need the upstream Suno Sutra base install, and it leaves the desktop, hostname, kernel and existing packages as they are. Physical hardware comes later and is not part of this role yet.
 
 ## What it installs
 
-| Component | On-device destination |
+| Part | Where |
 |---|---|
-| `embed.py`, `ocr.py` (new model wrappers) | `{device_root}/python/pocketinfer/models/` |
-| `specialist/` (engine, grounding, retrieval) | `{device_root}/python/pocketinfer/specialist/` |
-| `specialist_app.py` (the application) | `{device_root}/python/pocketinfer/applications/` |
-| DIKSHA corpus + index (content) | `/opt/specialist/corpus/` |
-| Boot-into-Specialist systemd drop-in | `/etc/systemd/system/pocketinfer.service.d/10-specialist.conf` |
-
-`device_root` defaults to `/home/ubuntu/pocket-infer-sw`.
-
-Content is deliberately kept **outside** the code tree so the syllabus can be
-refreshed without redeploying the module (`--tags content`).
+| Answer model, Qwen2.5-1.5B | Ollama |
+| Hindi and Tamil speech input, translation, speech output | Bhashini service on `127.0.0.1:11400`, in `/opt/specialist/bhashini_models` |
+| English speech input, Whisper `small.en` | `/opt/specialist/models/whisper` |
+| Retrieval, `multilingual-e5-small` | `/opt/specialist/models` |
+| Reading pages, Tesseract | System package |
+| DIKSHA index | `/opt/specialist/corpus` |
+| Pipeline code and Python environment | `/opt/specialist/app`, `/opt/specialist/venv` |
+| Commands to run it | `/usr/local/bin/specialist`, `/usr/local/bin/specialist-voice` |
 
 ## Install
 
-```bash
-cp ansible/inventory.ini.sample ansible/inventory.ini   # adjust for your device
-cd ansible
-ansible-playbook -i inventory.ini install_specialist.yml
-```
-
-The app is auto-discovered by the platform's application registry, so it shows
-up in `pocketinfer-service --list-apps` with no extra wiring, and the drop-in
-makes the device boot into it.
-
-## Before you run it — confirm the Python environment
-
-The base platform is inconsistent about where the service runs from:
-
-- the base `pocketinfer.service` unit points at the **venv**
-  (`{device_root}/python/venv/bin/pocketinfer-service`), while
-- the base `app` Ansible role pip-installs **system-wide** and calls
-  `/usr/local/bin/pocketinfer-service`.
-
-The module's dependencies must land in whichever environment actually runs the
-service, or the app will import-fail on boot. Defaults assume the **venv**;
-switch with:
+From a computer that can reach the Jetson:
 
 ```bash
-ansible-playbook -i inventory.ini install_specialist.yml \
-  -e specialist_exec_path=/usr/local/bin/pocketinfer-service \
-  -e specialist_pip_executable=pip3
+./scripts/make_module.sh
 ```
-
-## Useful overrides / tags
 
 ```bash
--e specialist_set_default_app=false      # don't change the boot app
--e specialist_corpus_dir=/opt/specialist/corpus
---tags content                            # refresh syllabus only (no code)
---tags code                               # push code only
+cd dist/specialist-module/ansible && cp inventory.ini.sample inventory.ini
 ```
 
-## Rollback
-
-Remove the drop-in and reload systemd to return the device to its previous
-default application; the added files are inert unless the app is selected:
+Set your device name and user in `inventory.ini`, then run:
 
 ```bash
-sudo rm /etc/systemd/system/pocketinfer.service.d/10-specialist.conf
-sudo systemctl daemon-reload && sudo systemctl restart pocketinfer
+ansible-playbook -i inventory.ini install_specialist.yml -K
 ```
 
-## Regenerating this module
+`-K` asks for the device's sudo password. The playbook is safe to re-run, because finished steps get skipped and downloads resume. It ends by asking test questions in English and Hindi, and it fails if the device does not cite a source, refuse an off-topic question or answer in Hindi.
 
-It is generated from the canonical source tree — don't edit it by hand:
+## Settings
+
+Change these in the inventory or with `-e`. The full list is in `ansible/roles/specialist/defaults/main.yml`.
+
+| Setting | Use it to |
+|---|---|
+| `specialist_llm_model` | Swap the answer model, for example to the fine-tuned model once it exists |
+| `specialist_whisper_model` | Change the English speech model |
+| `specialist_ocr_packs` | Choose the languages for reading pages |
+| `specialist_ollama_source` | Install Ollama from `docker` where GitHub downloads are slow |
+| `specialist_assets_dir` | Reuse files you have already downloaded |
+
+To update only the syllabus:
 
 ```bash
-./scripts/make_module.sh --tar
+ansible-playbook -i inventory.ini install_specialist.yml -K --tags content
 ```
 
-See `MANIFEST.txt` in the generated module for the exact file→destination map.
+## Run it
+
+```bash
+specialist "What is photosynthesis?"
+```
+
+```bash
+specialist --out-lang hi "What is photosynthesis?"
+```
+
+For the full voice loop, give it a WAV file, a page image or a USB microphone:
+
+```bash
+specialist-voice --in-lang hi --out-lang hi --from-wav question.wav
+```
+
+```bash
+specialist-voice --in-lang hi --out-lang hi --from-image page.jpg
+```
+
+```bash
+specialist-voice --in-lang hi --out-lang hi --mic-device plughw:1,0
+```
+
+Set `SPECIALIST_ALSA_DEVICE` to choose the speaker, or pass `--no-speak` to print only.
+
+## Power mode
+
+The role does not change the power mode, because switching can require a reboot. On the Orin Nano Super, `MAXN_SUPER` is mode 2:
+
+```bash
+sudo nvpmodel -m 2
+```
+
+```bash
+sudo jetson_clocks
+```
+
+## Undo it
+
+Stop the services and remove the install folder:
+
+```bash
+sudo systemctl disable --now bhashini_models
+```
+
+```bash
+sudo rm -rf /opt/specialist /usr/local/bin/specialist /usr/local/bin/specialist-voice /etc/systemd/system/bhashini_models.service
+```
+
+Ollama and the system packages stay installed.

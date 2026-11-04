@@ -4,11 +4,8 @@ Context-aware speech-to-text: unlike the small Vosk model (Kaldi + a weak n-gram
 LM, which mangles technical vocabulary), Whisper attends over the whole utterance,
 so science terms like "photosynthesis" transcribe correctly.
 
-Runs on **faster-whisper**, whose backend is **CTranslate2 — already installed on
-the Suno Sutra device** (the BHASHINI NMT uses it, built with CUDA), so this adds
-no heavy new runtime, just the small model weights.
-
-Follows the platform model-wrapper shape (``__init__`` + ``verify``/``update``).
+Runs on **faster-whisper**, whose backend is CTranslate2. The device install uses a
+CUDA build of CTranslate2, shared with the Bhashini translation service.
 """
 
 from __future__ import annotations
@@ -72,12 +69,10 @@ class Whisper:
     # --- pocketinfer model contract --------------------------------------
     @classmethod
     def verify(cls, args):
-        # Lenient: don't block app startup if Whisper isn't installed/downloaded —
-        # the app falls back to Vosk. Report status so provisioning can act.
         try:
             import faster_whisper  # noqa: F401
         except Exception as e:  # noqa: BLE001
-            return True, f"faster-whisper not installed ({e}); ASR will fall back to Vosk."
+            return False, f"faster-whisper not installed ({e})."
         return True, "faster-whisper available."
 
     @classmethod
@@ -90,4 +85,4 @@ class Whisper:
             return True, f"Whisper model '{model_size}' cached."
         except Exception as e:  # noqa: BLE001
             logger.warning("Whisper.update: could not prepare '%s' (%s)", model_size, e)
-            return True, "Whisper unavailable; ASR will fall back to Vosk."
+            return False, f"Whisper unavailable: {e}"

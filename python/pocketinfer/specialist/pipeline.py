@@ -1,9 +1,8 @@
 """The offline answer loop, as a board-agnostic engine.
 
-This is the reusable core shared by the on-device application and the laptop
-demo. Input *capture* (ASR / OCR / buttons / camera) and output *playback*
-(ALSA) are board-specific and live in the application; everything between —
-embed -> retrieve -> ground -> LLM -> MT — lives here.
+This is the core shared by run_specialist.py and the voice loop. Input *capture*
+(ASR / OCR) and output *playback* live in those callers; everything between,
+embed -> retrieve -> ground -> LLM -> MT, lives here.
 
     request (text from ASR or OCR)
         -> Embed.embed_one(query)
@@ -98,9 +97,6 @@ class SpecialistEngine:
     ):
         self.index = VectorIndex(index_dir)
         self.embedder = embedder or Embed(model_name=self.index.embedder_name or DEFAULT_MODEL_NAME)
-        # The TF-IDF fallback carries fitted state baked next to the index.
-        if self.embedder.backend == "tfidf" and Embed.has_state(index_dir):
-            self.embedder.load_state(index_dir)
         self._check_embedder_matches_index()
         self.llm = llm or extractive_llm  # extractive fallback keeps it offline+runnable
         self.stream_llm = stream_llm      # optional; else stream_answer pseudo-streams
@@ -281,7 +277,7 @@ def extractive_llm(system_prompt: str, user_prompt: str) -> str:
     embedded in the system prompt, which is genuinely grounded (the passage is
     real DIKSHA text). This lets the full loop run without ollama while still
     honouring the only-from-source contract. On the device, pass a real grounded
-    LLM client (see app/specialist_app.py) instead.
+    LLM client (see llm.py) instead.
     """
     marker = "[1] ("
     idx = system_prompt.find(marker)

@@ -1,21 +1,14 @@
 ---
-# Install The Specialist module onto a device that already has the Suno Sutra base.
+# Install The Specialist on a Jetson running JetPack 6.
 #
-#   ansible-playbook -i inventory.ini install_specialist.yml
+#   cp inventory.ini.sample inventory.ini     # adjust for your device
+#   ansible-playbook -i inventory.ini install_specialist.yml -K
 #
-# This playbook is standalone — it does NOT modify the base platform's
-# install_all_usb.yml / update_only_usb.yml, so the base repo stays pristine.
+# -K asks for the device's sudo password. Safe to re-run: finished steps are skipped.
 #
-# Useful overrides:
-#   -e specialist_exec_path=/usr/local/bin/pocketinfer-service
-#   -e specialist_pip_executable=pip3
-#   -e specialist_set_default_app=false
-#   -e specialist_corpus_dir=/opt/specialist/corpus
-#
-# Tags: code | content | deps | service | verify
-#   ansible-playbook -i inventory.ini install_specialist.yml --tags content
-#   (content-only = refresh the syllabus without touching code)
+# Tags: system | assets | ollama | bhashini | app | content | verify
+#   ansible-playbook -i inventory.ini install_specialist.yml -K --tags content
 
-- hosts: usb
+- hosts: specialist
   roles:
-    - { role: specialist, tags: ['specialist'] }
+    - specialist

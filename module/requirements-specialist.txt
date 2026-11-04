@@ -1,33 +1,17 @@
-# The Specialist module — its OWN dependencies.
-# Kept separate from the base platform's python/requirements.txt so the base
-# stays pristine and upstream-updatable.
+# Python packages for the Specialist environment (/opt/specialist/venv).
+# Bhashini has its own environment and requirements, shipped inside its archive.
 
-# Vector maths for retrieval (usually already present via the base install).
-# NOTE: keep numpy < 2 on the Jetson — the base scipy/onnxruntime are built for
-# the NumPy 1.x ABI and crash under NumPy 2.
+# Keep NumPy below 2. Packages on the Jetson built for NumPy 1 break under NumPy 2.
 numpy<2
+requests
 
-# On-device, Indic-capable embedding model for retrieval — ONNX backend.
-# Runs multilingual-e5-small on onnxruntime (onnxruntime-gpu is already installed
-# on the device by the base image) plus a lightweight tokenizer. No torch /
-# sklearn / scipy, so it avoids the Jetson dependency conflicts.
-#   - onnxruntime: only needed off-device; on the Jetson use the base's
-#     onnxruntime-gpu (do NOT install plain onnxruntime over it).
-#   - tokenizers: small Rust-backed tokenizer, the only genuinely new dep.
-# Fetch the model files once with tools/fetch_onnx_embedder.py.
-# If the ONNX model is absent, the embedder falls back to a built-in TF-IDF model
-# so the device still functions (at lower retrieval quality).
+# Client for the local Ollama service.
+ollama
+
+# Retrieval: multilingual-e5-small on ONNX, with no PyTorch.
+onnxruntime
 tokenizers
-onnxruntime ; platform_machine != "aarch64"
 
-# Whisper ASR (context-aware English speech-to-text — handles science vocabulary
-# the small Vosk model mangles). Backend is CTranslate2, which is ALREADY on the
-# device (CUDA build, used by BHASHINI NMT).
-# IMPORTANT on the Jetson: install faster-whisper WITHOUT letting pip replace that
-# CUDA ctranslate2 with a CPU PyPI wheel:
-#     pip3 install --user faster-whisper
-#     python3 -c "import ctranslate2; print(ctranslate2.__version__)"   # verify unchanged
-# If ctranslate2 got downgraded, reinstall the device's CUDA wheel
-# (rootfs/roles/indic/files/ctranslate2-*.whl). If Whisper isn't installed the
-# app falls back to Vosk automatically.
+# English speech-to-text. The role installs the CUDA build of CTranslate2 first,
+# and pip keeps it because it already satisfies this package's requirement.
 faster-whisper

@@ -1,27 +1,24 @@
-"""OCR wrapper — the camera/textbook-page capture path.
+"""OCR wrapper: the camera and textbook-page capture path.
 
-Mirrors the existing BHASHINI model wrappers (``Asr``/``Nmt``/``Tts``): it posts
-to the local BHASHINI model service on port 11400 and returns recognized text.
-The teacher can point the camera at a textbook page; the recognized text becomes
-(or augments) the request that gets embedded and retrieved against.
-
-The stock Suno Sutra image already ships BHASHINI ASR/NMT/TTS on this service;
-OCR is declared "reuse (existing)" in the spec and is expected on the same
-service under ``/ocr``.
+Runs Tesseract on the device. The Bhashini service bundled with Suno Sutra has no
+OCR endpoint, so the spec's "reuse existing OCR" could not be met as written. The
+image goes in over a pipe and the text comes back over a pipe, so nothing is written
+to disk and nothing leaves the device.
 """
 
 from __future__ import annotations
 
-import base64
 import logging
-import time
-from subprocess import check_output
-
-import requests
+import shutil
+import subprocess
 
 logger = logging.getLogger(__name__)
 
-BHASHINI_BASE = "http://localhost:11400"
+# Language codes used across the Specialist -> Tesseract language packs.
+TESSERACT_LANG = {
+    "en": "eng", "hi": "hin", "ta": "tam", "te": "tel", "mr": "mar",
+    "gu": "guj", "bn": "ben", "pa": "pan", "kn": "kan",
+}
 
 
 class Ocr:
@@ -30,32 +27,24 @@ class Ocr:
 
     def infer(self, image_bytes: bytes, language: str = "en") -> dict:
         """Recognize text in a JPEG/PNG image. Returns {'text': ...}."""
-        image_base64 = base64.b64encode(bytes(image_bytes)).decode("utf-8")
-        payload = {"language": language, "image_base64": image_base64}
-        response = requests.post(f"{BHASHINI_BASE}/ocr", json=payload, timeout=30)
-        if response.status_code == 200:
-            return response.json()
-        raise RuntimeError(f"OCR inference failed: {response.text}")
+        lang = TESSERACT_LANG.get(language)
+        if lang is None:
+            raise ValueError(f"OCR does not support language '{language}'")
+        # Textbook pages often mix English terms into the local language.
+        packs = lang if lang == "eng" else f"{lang}+eng"
+        result = subprocess.run(
+            ["tesseract", "stdin", "stdout", "-l", packs],
+            input=bytes(image_bytes), capture_output=True, timeout=60,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"OCR failed: {result.stderr.decode(errors='replace')[:200]}")
+        return {"text": result.stdout.decode("utf-8", errors="replace").strip()}
 
     @classmethod
     def verify(cls, args):
-        try:
-            response = requests.get(f"{BHASHINI_BASE}/health")
-            if response.status_code == 200:
-                return True, "OCR service is available."
-        except requests.exceptions.ConnectionError:
-            logger.info("Connection error, trying to launch BHASHINI model service")
-        check_output("systemctl restart bhashini_models.service", shell=True)
-        start = time.time()
-        while time.time() - start < 60.0:
-            try:
-                response = requests.get(f"{BHASHINI_BASE}/health")
-                if response.status_code == 200:
-                    return True, "OCR service is available."
-            except requests.exceptions.ConnectionError:
-                pass
-            time.sleep(0.25)
-        return False, "OCR service did not become available."
+        if shutil.which("tesseract"):
+            return True, "Tesseract is available."
+        return False, "Tesseract is not installed."
 
     @classmethod
     def update(cls, args):

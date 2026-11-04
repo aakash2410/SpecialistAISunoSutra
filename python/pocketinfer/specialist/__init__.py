@@ -1,9 +1,8 @@
 """The Specialist — on-device runtime subpackage.
 
 A grounded, offline subject expert built on Suno Sutra. The embedding model and
-OCR wrapper live under ``pocketinfer.models`` (so the application manifest's
-dependency verification resolves them like any other model); the retrieval,
-grounding, and orchestration live here.
+OCR wrapper live under ``pocketinfer.models``; the retrieval, grounding, and
+orchestration live here.
 """
 
 from ..models.embed import Embed

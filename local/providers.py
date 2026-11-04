@@ -1,26 +1,18 @@
-"""Concrete providers for the laptop harness + name-keyed factories.
+"""Concrete speech and translation providers, plus name-keyed factories.
 
-Every provider implements a contract from ``pocketinfer.specialist.providers``,
-so they are interchangeable. Pick them by name on the CLI:
+Every provider implements a contract from ``pocketinfer.specialist.providers``, so
+they are interchangeable. Pick them by name on the command line:
 
-    --asr vosk|bhashini
-    --mt  none|bhashini            (MT is optional)
-    --tts say|bhashini
-    --llm extractive|ollama
-
-The ``bhashini`` variants reuse the device's HTTP model wrappers unchanged, so
-the *same* voice loop runs on-device by selecting them (they talk to the
-BHASHINI service on localhost:11400). The ``vosk`` / ``say`` / ``none`` /
-``extractive`` variants are the offline laptop defaults.
+    --asr auto|whisper|bhashini    (auto: Whisper for English, Bhashini otherwise)
+    --mt  bhashini|none
+    --tts bhashini
+    --llm ollama|extractive
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 import re
-import subprocess
 
 from pocketinfer.specialist.providers import AudioClip
 from pocketinfer.specialist.pipeline import extractive_llm
@@ -29,61 +21,6 @@ logger = logging.getLogger(__name__)
 
 
 # --------------------------------------------------------------------------- ASR
-class VoskASR:
-    name = "vosk"
-
-    def __init__(self, model_path: str | None = None):
-        try:
-            from vosk import Model  # noqa: F401
-        except Exception as e:  # noqa: BLE001
-            raise RuntimeError(
-                "vosk not installed. Install laptop deps: "
-                "pip install -r local/requirements-local.txt\n"
-                f"(error: {e})"
-            )
-        from vosk import Model
-
-        path = model_path or self._locate_model()
-        if not path or not os.path.isdir(path):
-            raise RuntimeError(
-                "Vosk model not found. Download a small model and set VOSK_MODEL_PATH, e.g.:\n"
-                "  mkdir -p local/models && cd local/models\n"
-                "  curl -LO https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip\n"
-                "  unzip vosk-model-small-en-us-0.15.zip\n"
-                "Then re-run (or pass --vosk-model <path>)."
-            )
-        logger.info("Loading Vosk model from %s", path)
-        self._model = Model(path)
-
-    @staticmethod
-    def _locate_model() -> str | None:
-        if os.environ.get("VOSK_MODEL_PATH"):
-            return os.environ["VOSK_MODEL_PATH"]
-        here = os.path.dirname(__file__)
-        candidates = [
-            os.path.join(here, "models", "vosk-model-small-en-us-0.15"),
-            os.path.join(here, "models", "vosk-model-small-hi-0.22"),
-        ]
-        for c in candidates:
-            if os.path.isdir(c):
-                return c
-        # any vosk-model-* directory under local/models
-        models_dir = os.path.join(here, "models")
-        if os.path.isdir(models_dir):
-            for d in sorted(os.listdir(models_dir)):
-                if d.startswith("vosk-model") and os.path.isdir(os.path.join(models_dir, d)):
-                    return os.path.join(models_dir, d)
-        return None
-
-    def transcribe(self, clip: AudioClip, language: str = "en") -> str:
-        from vosk import KaldiRecognizer
-
-        rec = KaldiRecognizer(self._model, clip.sample_rate)
-        rec.AcceptWaveform(clip.pcm)
-        result = json.loads(rec.FinalResult())
-        return result.get("text", "").strip()
-
-
 class BhashiniASR:
     name = "bhashini"
 
@@ -103,13 +40,10 @@ class WhisperASR:
                  task: str = "transcribe"):
         try:
             from pocketinfer.models.whisper import Whisper
-        except Exception as e:  # noqa: BLE001
-            raise RuntimeError(
-                "faster-whisper not installed. Install laptop deps "
-                "(pip install faster-whisper) or the module requirements.\n"
-                f"(error: {e})"
-            )
-        self._w = Whisper(model_size=model_size, model_dir=model_dir)
+
+            self._w = Whisper(model_size=model_size, model_dir=model_dir)
+        except ImportError as e:
+            raise RuntimeError(f"faster-whisper is not installed ({e})")
         self.task = task  # 'transcribe' | 'translate' (non-English speech -> English)
 
     def transcribe(self, clip: AudioClip, language: str = "en") -> str:
@@ -119,7 +53,7 @@ class WhisperASR:
 
 # ---------------------------------------------------------------------------- MT
 class NoopMT:
-    """Passthrough — MT is optional. Keeps the loop running English-only."""
+    """Passthrough, so the loop can run English-only without Bhashini."""
 
     name = "none"
 
@@ -137,16 +71,11 @@ class BhashiniMT:
 
         self._nmt = Nmt()
 
-    @staticmethod
-    def _code(lang: str) -> str:
-        # Match the platform convention: English is "EN", other languages are the
-        # lowercase ISO code (e.g. "hi"). Uppercasing "hi" -> "HI" 500s the model.
-        return "EN" if lang.lower() == "en" else lang.lower()
-
     def translate(self, text: str, src_lang: str, tgt_lang: str) -> str:
-        if src_lang.lower() == tgt_lang.lower():
+        # The Bhashini service only accepts lowercase language codes.
+        src, tgt = src_lang.lower(), tgt_lang.lower()
+        if src == tgt:
             return text
-        src, tgt = self._code(src_lang), self._code(tgt_lang)
         # ALWAYS translate sentence by sentence. BHASHINI NMT is sentence-tuned and
         # silently truncates a multi-sentence paragraph to the first segment (no
         # error), so a single call would drop most of the answer.
@@ -164,49 +93,6 @@ class BhashiniMT:
 
 
 # --------------------------------------------------------------------------- TTS
-# macOS 'say' voices per language (fall back to default voice if unavailable).
-_SAY_VOICES = {"hi": "Lekha", "en": None}
-
-
-class MacSayTTS:
-    name = "say"
-
-    def __init__(self):
-        if not _which("say"):
-            raise RuntimeError("macOS 'say' not found — use --tts bhashini or run on macOS.")
-
-    def _voice(self, language: str) -> str | None:
-        return _SAY_VOICES.get(language.lower())
-
-    def speak(self, text: str, language: str = "en") -> None:
-        if not text:
-            return
-        cmd = ["say"]
-        voice = self._voice(language)
-        if voice:
-            cmd += ["-v", voice]
-        cmd.append(text)
-        # If the chosen voice isn't installed, retry without it.
-        if subprocess.run(cmd).returncode != 0 and voice:
-            subprocess.run(["say", text])
-
-    def synthesize(self, text: str, language: str = "en"):
-        import tempfile
-
-        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-        tmp.close()
-        cmd = ["say", "--file-format=WAVE", "--data-format=LEI16@22050", "-o", tmp.name]
-        voice = self._voice(language)
-        if voice:
-            cmd += ["-v", voice]
-        cmd.append(text)
-        subprocess.run(cmd, check=False)
-        with open(tmp.name, "rb") as f:
-            data = f.read()
-        os.unlink(tmp.name)
-        return data
-
-
 class BhashiniTTS:
     name = "bhashini"
 
@@ -228,7 +114,7 @@ class BhashiniTTS:
 
 
 # --------------------------------------------------------------------------- LLM
-def make_llm(name: str, ollama_model: str = "qwen3-vl:2b"):
+def make_llm(name: str, ollama_model: str = "qwen2.5:1.5b"):
     if name == "extractive":
         return extractive_llm
     if name == "ollama":
@@ -239,20 +125,12 @@ def make_llm(name: str, ollama_model: str = "qwen3-vl:2b"):
 
 
 # ------------------------------------------------------------------- factories
-def _which(cmd: str) -> bool:
-    from shutil import which
-
-    return which(cmd) is not None
-
-
-ASR_PROVIDERS = {"vosk": VoskASR, "bhashini": BhashiniASR, "whisper": WhisperASR}
+ASR_PROVIDERS = {"bhashini": BhashiniASR, "whisper": WhisperASR}
 MT_PROVIDERS = {"none": NoopMT, "bhashini": BhashiniMT}
-TTS_PROVIDERS = {"say": MacSayTTS, "bhashini": BhashiniTTS}
+TTS_PROVIDERS = {"bhashini": BhashiniTTS}
 
 
-def make_asr(name: str, vosk_model: str | None = None, whisper_model: str = "small.en"):
-    if name == "vosk":
-        return VoskASR(model_path=vosk_model)
+def make_asr(name: str, whisper_model: str = "small.en"):
     if name == "whisper":
         return WhisperASR(model_size=whisper_model)
     if name in ASR_PROVIDERS:

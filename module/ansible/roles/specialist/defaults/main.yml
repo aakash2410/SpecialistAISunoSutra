@@ -1,36 +1,36 @@
 ---
-# The Specialist module — deployment variables.
-# Override any of these with -e on the ansible-playbook command line.
+# The Specialist: deployment variables.
+# Override any of these in the inventory or with -e on the command line.
 
-# Where the Suno Sutra base platform already lives on the device.
-specialist_device_root: /home/ubuntu/pocket-infer-sw
-specialist_pkg_dir: "{{ specialist_device_root }}/python/pocketinfer"
+# Who owns and runs everything. Defaults to the account Ansible connects as.
+specialist_user: "{{ ansible_user | default(ansible_user_id) }}"
 
-# Content lives separately from code so the syllabus can be refreshed
-# without redeploying the module.
-specialist_corpus_dir: /opt/specialist/corpus
-specialist_corpus_owner: ubuntu
+# Everything The Specialist installs lives here.
+specialist_root: /opt/specialist
+specialist_venv: "{{ specialist_root }}/venv"
+specialist_bhashini_dir: "{{ specialist_root }}/bhashini_models"
+# Point this at an existing folder to reuse files you have already downloaded.
+specialist_assets_dir: "{{ specialist_root }}/assets"
 
-# IMPORTANT — confirm with the hardware team which environment the service
-# actually runs from. The base systemd unit points at the venv, but the base
-# Ansible role pip-installs system-wide. These two must agree, or the app will
-# import-fail on boot.
-#
-#   venv (matches the base pocketinfer.service unit):
-specialist_exec_path: "{{ specialist_device_root }}/python/venv/bin/pocketinfer-service"
-specialist_pip_executable: "{{ specialist_device_root }}/python/venv/bin/pip"
-#   system-wide (matches the base `app` Ansible role) — swap to these if that's
-#   what your devices use:
-# specialist_exec_path: /usr/local/bin/pocketinfer-service
-# specialist_pip_executable: pip3
+# Answer model. Replace this with the fine-tuned model once it exists.
+specialist_llm_model: qwen2.5:1.5b
 
-# Make the device boot into The Specialist via a systemd drop-in (additive —
-# the base unit file is never edited). Set false to leave app selection manual.
-specialist_set_default_app: true
+# English speech-to-text. Hindi and Tamil use Bhashini.
+specialist_whisper_model: small.en
 
-# Pre-download the embedding model so run time stays fully offline.
-specialist_embed_model: intfloat/multilingual-e5-small
-specialist_prefetch_embed_model: true
+# How to install Ollama if it is missing: "script" uses ollama.com/install.sh, and
+# "docker" copies it out of the official image. Use "docker" where GitHub downloads
+# are slow, because the install script cannot resume.
+specialist_ollama_source: script
 
-# Restart the service at the end so the new app takes effect.
-specialist_restart_service: true
+# Tesseract language packs for reading textbook pages.
+specialist_ocr_packs: [hin, tam, tel, mar, guj, ben, pan, kan]
+
+# Package index for the Jetson build of PyTorch used by Bhashini.
+specialist_torch_index: https://pypi.jetson-ai-lab.io/jp6/cu126
+
+# Free disk space required before installing, in GB.
+specialist_min_free_gb: 15
+
+# A question the installed corpus covers, used by the final checks.
+specialist_verify_question: What is photosynthesis?

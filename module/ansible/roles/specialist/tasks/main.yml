@@ -1,133 +1,358 @@
 ---
-# Install The Specialist module onto a device that ALREADY has the Suno Sutra base.
-#
-# Everything here is ADDITIVE: only new files are written into the base python
-# package, content goes to its own data directory, and the boot application is
-# selected via a systemd drop-in. No base file is modified.
+# Install The Specialist on a Jetson running JetPack 6. It needs nothing from the
+# upstream Suno Sutra base install, and it leaves the desktop, hostname, kernel and
+# existing packages as they are. Physical hardware is not part of this role yet.
 
-- name: Verify the Suno Sutra base is present on the device
+# ------------------------------------------------------------------- preflight
+- name: Read the JetPack release
   tags: [always]
-  ansible.builtin.stat:
-    path: "{{ specialist_pkg_dir }}/applications/registry.py"
-  register: specialist_base
+  ansible.builtin.slurp:
+    src: /etc/nv_tegra_release
+  register: specialist_release
 
-- name: Fail early if the base platform is missing
+- name: Measure free disk space
   tags: [always]
-  ansible.builtin.fail:
-    msg: >-
-      Suno Sutra base not found at {{ specialist_pkg_dir }}. Provision the base
-      platform first (rootfs/install_all_usb.yml), then install this module.
-  when: not specialist_base.stat.exists
+  ansible.builtin.shell: df --output=avail -BG / | tail -1 | tr -dc 0-9
+  register: specialist_free_gb
+  changed_when: false
 
-# ---------------------------------------------------------------- code overlay
-- name: Install new model wrappers (embed, ocr)
-  tags: [code]
-  ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../payload/python/pocketinfer/models/{{ item }}"
-    dest: "{{ specialist_pkg_dir }}/models/{{ item }}"
-    mode: "0644"
-  loop:
-    - embed.py
-    - ocr.py
-  notify: restart pocketinfer
+- name: Stop early on an unsupported device
+  tags: [always]
+  ansible.builtin.assert:
+    that:
+      - "'R36' in (specialist_release.content | b64decode)"
+      - specialist_free_gb.stdout | int >= specialist_min_free_gb
+    fail_msg: >-
+      The Specialist needs JetPack 6 (R36) and {{ specialist_min_free_gb }} GB free.
+      This device has {{ specialist_free_gb.stdout }} GB free.
 
-- name: Install the Specialist runtime subpackage
-  tags: [code]
-  ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../payload/python/pocketinfer/specialist/"
-    dest: "{{ specialist_pkg_dir }}/specialist/"
-    mode: "0644"
-  notify: restart pocketinfer
-
-- name: Install the Specialist application
-  tags: [code]
-  ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../payload/python/pocketinfer/applications/specialist_app.py"
-    dest: "{{ specialist_pkg_dir }}/applications/specialist_app.py"
-    mode: "0644"
-  notify: restart pocketinfer
-
-# -------------------------------------------------------------------- content
-- name: Ensure the corpus data directory exists
-  tags: [content]
-  ansible.builtin.file:
-    path: "{{ specialist_corpus_dir }}"
-    state: directory
-    owner: "{{ specialist_corpus_owner }}"
-    mode: "0755"
+# --------------------------------------------------------------- system packages
+- name: Install system packages
+  tags: [system]
   become: true
+  ansible.builtin.apt:
+    update_cache: true
+    pkg: "{{ ['python3-venv', 'python3-pip', 'python3-setuptools', 'unzip', 'git', 'build-essential',
+              'libomp5-14', 'libsndfile1', 'perl', 'ffmpeg', 'alsa-utils', 'v4l-utils', 'tesseract-ocr']
+              + (specialist_ocr_packs | map('regex_replace', '^', 'tesseract-ocr-') | list) }}"
 
-- name: Deploy the baked DIKSHA corpus/index
+- name: Create the install folder
+  tags: [system]
+  become: true
+  ansible.builtin.file:
+    path: "{{ specialist_root }}"
+    state: directory
+    owner: "{{ specialist_user }}"
+    mode: "0755"
+
+- name: Create the working folders
+  tags: [system]
+  ansible.builtin.file:
+    path: "{{ specialist_root }}/{{ item }}"
+    state: directory
+    mode: "0755"
+  loop: [app, corpus, models, models/whisper, tools]
+
+# ---------------------------------------------------------------------- assets
+- name: Copy the asset fetcher
+  tags: [assets]
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../payload/tools/"
+    dest: "{{ specialist_root }}/tools/"
+    mode: "0755"
+
+- name: Fetch Bhashini and the CUDA build of CTranslate2 from Git LFS (resumes, checks SHA-256)
+  tags: [assets]
+  ansible.builtin.command:
+    cmd: >-
+      python3 {{ specialist_root }}/tools/fetch_assets.py
+      --manifest {{ specialist_root }}/tools/assets.json
+      --dest {{ specialist_assets_dir }}
+  async: 86400
+  poll: 60
+  register: specialist_fetch
+  changed_when: "'verified' in specialist_fetch.stdout"
+
+- name: Install the CUDA build of CTranslate2
+  tags: [assets]
+  become: true
+  ansible.builtin.apt:
+    deb: "{{ specialist_assets_dir }}/ctranslate2-0.1.1-Linux.deb"
+    state: present
+
+# ---------------------------------------------------------------------- Ollama
+- name: Check for Ollama
+  tags: [ollama]
+  ansible.builtin.stat:
+    path: /usr/local/bin/ollama
+  register: specialist_ollama_bin
+
+- name: Install Ollama with the official script
+  tags: [ollama]
+  become: true
+  ansible.builtin.shell: curl -fsSL https://ollama.com/install.sh | sh
+  when: not specialist_ollama_bin.stat.exists and specialist_ollama_source == 'script'
+
+- name: Install Ollama from the official Docker image
+  tags: [ollama]
+  become: true
+  ansible.builtin.shell: |
+    set -e
+    docker pull ollama/ollama:latest
+    docker create --name specialist-ollama-tmp ollama/ollama:latest
+    rm -rf /usr/local/lib/ollama
+    docker cp specialist-ollama-tmp:/usr/bin/ollama /usr/local/bin/ollama
+    docker cp specialist-ollama-tmp:/usr/lib/ollama /usr/local/lib/ollama
+    docker rm specialist-ollama-tmp
+    docker rmi ollama/ollama:latest
+  when: not specialist_ollama_bin.stat.exists and specialist_ollama_source == 'docker'
+
+- name: Check for the Ollama service
+  tags: [ollama]
+  ansible.builtin.stat:
+    path: /etc/systemd/system/ollama.service
+  register: specialist_ollama_unit
+
+- name: Create the Ollama user
+  tags: [ollama]
+  become: true
+  ansible.builtin.user:
+    name: ollama
+    system: true
+    shell: /bin/false
+    home: /usr/share/ollama
+    groups: [render, video]
+    append: true
+  when: not specialist_ollama_unit.stat.exists
+
+- name: Install the Ollama service
+  tags: [ollama]
+  become: true
+  ansible.builtin.template:
+    src: ollama.service.j2
+    dest: /etc/systemd/system/ollama.service
+    mode: "0644"
+  when: not specialist_ollama_unit.stat.exists
+
+- name: Start Ollama
+  tags: [ollama]
+  become: true
+  ansible.builtin.systemd:
+    name: ollama
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: List the installed answer models
+  tags: [ollama]
+  ansible.builtin.command: /usr/local/bin/ollama list
+  register: specialist_ollama_models
+  changed_when: false
+  retries: 10
+  delay: 3
+  until: specialist_ollama_models.rc == 0
+
+- name: Pull the answer model
+  tags: [ollama]
+  ansible.builtin.command: /usr/local/bin/ollama pull {{ specialist_llm_model }}
+  when: specialist_llm_model not in specialist_ollama_models.stdout
+
+# -------------------------------------------------------------------- Bhashini
+- name: Unpack the Bhashini models
+  tags: [bhashini]
+  ansible.builtin.unarchive:
+    src: "{{ specialist_assets_dir }}/bhashini_models.zip"
+    dest: "{{ specialist_root }}"
+    remote_src: true
+    creates: "{{ specialist_bhashini_dir }}/main.py"
+
+# The wheel goes in first so the requirements below keep the CUDA build rather than
+# replacing it with a CPU build.
+- name: Install CTranslate2 into the Bhashini environment
+  tags: [bhashini]
+  ansible.builtin.pip:
+    name: "{{ specialist_assets_dir }}/ctranslate2-4.6.3-cp310-cp310-linux_aarch64.whl"
+    virtualenv: "{{ specialist_bhashini_dir }}/venv"
+    virtualenv_command: python3 -m venv
+
+- name: Install the Bhashini Python packages
+  tags: [bhashini]
+  ansible.builtin.pip:
+    requirements: "{{ specialist_bhashini_dir }}/requirements.txt"
+    extra_args: "--index-url={{ specialist_torch_index }}"
+    virtualenv: "{{ specialist_bhashini_dir }}/venv"
+
+- name: Keep NumPy compatible with the Bhashini packages
+  tags: [bhashini]
+  ansible.builtin.pip:
+    name: numpy<2
+    extra_args: "--index-url={{ specialist_torch_index }}"
+    virtualenv: "{{ specialist_bhashini_dir }}/venv"
+
+# Translation splits text with NLTK, whose data is not in the Bhashini archive.
+- name: Download the NLTK sentence data
+  tags: [bhashini]
+  ansible.builtin.command:
+    cmd: >-
+      {{ specialist_bhashini_dir }}/venv/bin/python -m nltk.downloader
+      -d {{ specialist_bhashini_dir }}/venv/nltk_data punkt punkt_tab
+    creates: "{{ specialist_bhashini_dir }}/venv/nltk_data/tokenizers/punkt_tab"
+
+- name: Download the Flite speech engine
+  tags: [bhashini]
+  ansible.builtin.git:
+    repo: https://github.com/festvox/flite
+    dest: "{{ specialist_bhashini_dir }}/tts/flite"
+    depth: 1
+    update: false
+
+- name: Build Flite
+  tags: [bhashini]
+  ansible.builtin.shell: ./configure && make
+  args:
+    chdir: "{{ specialist_bhashini_dir }}/tts/flite"
+    creates: "{{ specialist_bhashini_dir }}/tts/flite/bin/flite"
+
+- name: Download the default voices
+  tags: [bhashini]
+  ansible.builtin.command: make get_voices
+  args:
+    chdir: "{{ specialist_bhashini_dir }}/tts/flite"
+    creates: "{{ specialist_bhashini_dir }}/tts/flite/voices/cmu_us_aew.flitevox"
+
+- name: Download the Indic voices
+  tags: [bhashini]
+  ansible.builtin.command: ./bin/get_voices indic_voices
+  args:
+    chdir: "{{ specialist_bhashini_dir }}/tts/flite"
+    creates: "{{ specialist_bhashini_dir }}/tts/flite/voices/cmu_indic_hin_ab.flitevox"
+
+- name: Install the Bhashini service
+  tags: [bhashini]
+  become: true
+  ansible.builtin.template:
+    src: bhashini_models.service.j2
+    dest: /etc/systemd/system/bhashini_models.service
+    mode: "0644"
+  notify: restart bhashini
+
+- name: Start Bhashini
+  tags: [bhashini]
+  become: true
+  ansible.builtin.systemd:
+    name: bhashini_models
+    state: started
+    enabled: true
+    daemon_reload: true
+
+# ------------------------------------------------------------------------- app
+- name: Install CTranslate2 into the Specialist environment
+  tags: [app]
+  ansible.builtin.pip:
+    name: "{{ specialist_assets_dir }}/ctranslate2-4.6.3-cp310-cp310-linux_aarch64.whl"
+    virtualenv: "{{ specialist_venv }}"
+    virtualenv_command: python3 -m venv
+
+- name: Copy the Python requirements
+  tags: [app]
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../requirements-specialist.txt"
+    dest: "{{ specialist_root }}/requirements-specialist.txt"
+    mode: "0644"
+
+- name: Install the Specialist Python packages
+  tags: [app]
+  ansible.builtin.pip:
+    requirements: "{{ specialist_root }}/requirements-specialist.txt"
+    virtualenv: "{{ specialist_venv }}"
+
+- name: Download the Whisper model
+  tags: [app]
+  ansible.builtin.command:
+    cmd: >-
+      {{ specialist_venv }}/bin/python -c "from faster_whisper import WhisperModel;
+      WhisperModel('{{ specialist_whisper_model }}', device='cpu', compute_type='int8',
+      download_root='{{ specialist_root }}/models/whisper')"
+    creates: "{{ specialist_root }}/models/whisper/models--Systran--faster-whisper-{{ specialist_whisper_model }}"
+
+- name: Install the pipeline code
+  tags: [app]
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../payload/app/"
+    dest: "{{ specialist_root }}/app/"
+    mode: "0644"
+
+- name: Install the embedding model
+  tags: [app]
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../payload/models/"
+    dest: "{{ specialist_root }}/models/"
+    mode: "0644"
+
+- name: Install the specialist commands
+  tags: [app]
+  become: true
+  ansible.builtin.template:
+    src: "{{ item }}.sh.j2"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: "0755"
+  loop: [specialist, specialist-voice]
+
+# --------------------------------------------------------------------- content
+# Content is separate from code, so the syllabus can change on its own: --tags content
+- name: Install the DIKSHA index
   tags: [content]
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../payload/corpus/"
-    dest: "{{ specialist_corpus_dir }}/"
-    owner: "{{ specialist_corpus_owner }}"
+    dest: "{{ specialist_root }}/corpus/"
     mode: "0644"
-    directory_mode: "0755"
-  become: true
-  notify: restart pocketinfer
 
-# --------------------------------------------------------------- dependencies
-- name: Install the module's python dependencies
-  tags: [deps]
-  ansible.builtin.pip:
-    requirements: "{{ playbook_dir }}/../requirements-specialist.txt"
-    executable: "{{ specialist_pip_executable }}"
-  register: specialist_pip
-  failed_when: false
+# ---------------------------------------------------------------------- verify
+- name: Wait for Ollama and Bhashini
+  tags: [verify]
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ item }}"
+    timeout: 300
+  loop: [11434, 11400]
 
-- name: Report dependency install result
-  tags: [deps]
-  ansible.builtin.debug:
-    msg: >-
-      {{ 'Dependencies installed.' if specialist_pip.rc | default(1) == 0 else
-      'Dependency install failed — the embedder will fall back to TF-IDF (device
-      still works, lower retrieval quality). Check specialist_pip_executable.' }}
-
-- name: Pre-fetch the embedding model so run time stays offline
-  tags: [deps]
-  ansible.builtin.command:
-    cmd: >-
-      {{ specialist_exec_path | dirname }}/python -c
-      "from pocketinfer.models.embed import Embed;
-      print(Embed.update({'model_name': '{{ specialist_embed_model }}'}))"
-  register: specialist_prefetch
-  changed_when: false
-  failed_when: false
-  when: specialist_prefetch_embed_model | bool
-
-# ------------------------------------------------------------ app selection
-- name: Ensure the systemd drop-in directory exists
-  tags: [service]
-  ansible.builtin.file:
-    path: /etc/systemd/system/pocketinfer.service.d
-    state: directory
-    mode: "0755"
-  become: true
-  when: specialist_set_default_app | bool
-
-- name: Boot into The Specialist (additive systemd drop-in)
-  tags: [service]
-  ansible.builtin.template:
-    src: 10-specialist.conf.j2
-    dest: /etc/systemd/system/pocketinfer.service.d/10-specialist.conf
-    mode: "0644"
-  become: true
-  when: specialist_set_default_app | bool
-  notify:
-    - reload systemd
-    - restart pocketinfer
-
-- name: Sanity check — the Specialist app is registered
+- name: Ask a question the corpus covers
   tags: [verify]
   ansible.builtin.command:
-    cmd: "{{ specialist_exec_path }} --list-apps"
-  register: specialist_apps
+    argv: [/usr/local/bin/specialist, "{{ specialist_verify_question }}"]
+  register: specialist_check_answer
   changed_when: false
-  failed_when: false
+  failed_when: "'DIKSHA' not in specialist_check_answer.stdout"
 
-- name: Show registered applications
+- name: Ask a question the corpus does not cover
+  tags: [verify]
+  ansible.builtin.command:
+    argv: [/usr/local/bin/specialist, Who won the cricket world cup?]
+  register: specialist_check_refusal
+  changed_when: false
+  failed_when: "'approved DIKSHA' not in specialist_check_refusal.stdout"
+
+- name: Ask for an answer in Hindi
+  tags: [verify]
+  ansible.builtin.command:
+    argv: [/usr/local/bin/specialist, --out-lang, hi, "{{ specialist_verify_question }}"]
+  register: specialist_check_hindi
+  changed_when: false
+  failed_when: specialist_check_hindi.stdout is not search('[ऀ-ॿ]')
+
+- name: Check the CTranslate2 build and the Tesseract language packs
+  tags: [verify]
+  ansible.builtin.shell: |
+    {{ specialist_venv }}/bin/python -c "import ctranslate2 as c; print('CTranslate2', c.__version__, c.get_supported_compute_types('cuda'))"
+    tesseract --list-langs | tail -n +2 | tr '\n' ' '
+  register: specialist_check_tools
+  changed_when: false
+
+- name: Show the results
   tags: [verify]
   ansible.builtin.debug:
-    var: specialist_apps.stdout_lines
+    msg:
+      - "English: {{ specialist_check_answer.stdout_lines[-1] }}"
+      - "Refusal: {{ specialist_check_refusal.stdout_lines | select('search', 'approved DIKSHA') | first }}"
+      - "Hindi: {{ specialist_check_hindi.stdout_lines[-1] }}"
+      - "{{ specialist_check_tools.stdout }}"

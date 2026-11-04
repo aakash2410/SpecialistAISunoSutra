@@ -1,11 +1,7 @@
-"""Adapter: the platform's stock quantised LLM as a grounded chat client.
+"""Adapter: the quantised answer model in Ollama as a grounded chat client.
 
-The spec says reuse the platform's stock quantised LLM, grounded at inference
-time — no retraining, no fine-tuning. Grounding is achieved purely through the
-system/user prompts built in specialist.grounding.
-
-We call ollama directly (rather than via the base Ollama wrapper) so we can bound
-the work for a real-time classroom loop:
+Grounding is achieved through the system/user prompts built in
+specialist.grounding. We bound the work for a real-time classroom loop:
   * num_predict caps generated tokens (answers are meant to be short + read aloud),
   * temperature=0 keeps grounded answers deterministic,
   * a request timeout means a slow/stuck model fails cleanly instead of hanging.

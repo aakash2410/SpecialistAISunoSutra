@@ -1,12 +1,7 @@
 ---
-- name: reload systemd
+- name: restart bhashini
   ansible.builtin.systemd:
+    name: bhashini_models
+    state: restarted
     daemon_reload: true
   become: true
-
-- name: restart pocketinfer
-  ansible.builtin.systemd:
-    name: pocketinfer
-    state: restarted
-  become: true
-  when: specialist_restart_service | bool

@@ -1,0 +1,23 @@
+{
+  "lfs_repo": "currentai-org/suno-sutra-sw",
+  "assets": [
+    {
+      "name": "bhashini_models.zip",
+      "sha256": "144b08a29559530ddc1e3ad0833ad316cf24c26e87a338901d8a0281835ad50d",
+      "size": 1646462178,
+      "purpose": "Hindi and Tamil speech-to-text, translation, service code"
+    },
+    {
+      "name": "ctranslate2-0.1.1-Linux.deb",
+      "sha256": "ab9f866b2f064060ea6dc1739b1d4449be37a9913244440c80bdef006d00c99c",
+      "size": 3275408,
+      "purpose": "CUDA build of CTranslate2 (native library)"
+    },
+    {
+      "name": "ctranslate2-4.6.3-cp310-cp310-linux_aarch64.whl",
+      "sha256": "7681ec297d0cec97b641651d0e6f27bcf14292adfb8a9e875ea87308364aa089",
+      "size": 15212144,
+      "purpose": "CUDA build of CTranslate2 (Python bindings)"
+    }
+  ]
+}

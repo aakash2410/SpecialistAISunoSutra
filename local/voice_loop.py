@@ -1,19 +1,15 @@
-"""Run the full Specialist loop locally, with swappable providers.
+"""Run the full Specialist loop on the device, with swappable providers.
 
-    ASR  ->  MT (optional)  ->  Specialist  ->  MT (optional)  ->  TTS
+    speech or page  ->  translate  ->  Specialist  ->  translate  ->  speech
 
-Input a custom testcase three ways:
-  * live mic (default):   python -m local.voice_loop
-  * typed text:           python -m local.voice_loop --text "What is photosynthesis?"
-  * a WAV file:           python -m local.voice_loop --from-wav question.wav
-  * say-synthesized:      python -m local.voice_loop --say-question "explain photosynthesis"
+Give it a request in any of these ways:
+  * a WAV file:      python -m local.voice_loop --in-lang hi --from-wav question.wav
+  * a page image:    python -m local.voice_loop --in-lang hi --from-image page.jpg
+  * typed text:      python -m local.voice_loop --text "What is photosynthesis?"
+  * a USB mic:       python -m local.voice_loop --mic-device plughw:1,0
 
 Swap any component by name (contracts live in pocketinfer.specialist.providers):
-  --asr vosk|bhashini   --mt none|bhashini   --tts say|bhashini   --llm extractive|ollama
-
-Defaults are the offline laptop stack (vosk / none / say / extractive). Selecting
-the bhashini providers runs the identical loop against the device's BHASHINI
-service — same code, different backends.
+  --asr auto|whisper|bhashini   --mt bhashini|none   --tts bhashini   --llm ollama|extractive
 """
 
 from __future__ import annotations
@@ -35,16 +31,17 @@ from local.providers import make_asr, make_mt, make_tts, make_llm  # noqa: E402
 
 
 def _resolve_index() -> str:
-    """Canonical index: $SPECIALIST_INDEX_DIR > diksha_g7_all > committed reference."""
+    """Canonical index: $SPECIALIST_INDEX_DIR > the first baked index found."""
     env = os.environ.get("SPECIALIST_INDEX_DIR")
     if env:
         return env
-    root = os.path.join(os.path.dirname(__file__), "..", "corpus")
-    for name in ("diksha_g7_all", "diksha_g7_science"):
-        p = os.path.join(root, name, "index")
-        if os.path.exists(os.path.join(p, "embeddings.npy")):
-            return p
-    return os.path.join(root, "diksha_g7_science", "index")
+    roots = ("/opt/specialist/corpus", os.path.join(os.path.dirname(__file__), "..", "corpus"))
+    for root in roots:
+        for name in ("diksha_g7_all", "diksha_g7_science"):
+            p = os.path.join(root, name, "index")
+            if os.path.exists(os.path.join(p, "embeddings.npy")):
+                return p
+    return os.path.join(roots[1], "diksha_g7_science", "index")
 
 
 DEFAULT_INDEX = _resolve_index()
@@ -61,8 +58,10 @@ class LoopHarness:
         self.out_lang = args.out_lang.lower()
 
         # Providers (each is swappable via the factory names).
-        self.asr = None if args.text else make_asr(
-            args.asr, vosk_model=args.vosk_model, whisper_model=args.whisper_model)
+        asr = args.asr
+        if asr == "auto":
+            asr = "whisper" if self.in_lang == "en" else "bhashini"
+        self.asr = None if (args.text or args.from_image) else make_asr(asr, whisper_model=args.whisper_model)
         self.mt = make_mt(args.mt)                       # used for query-side translation too
         self.tts_provider = None if args.no_speak else make_tts(args.tts)
 
@@ -79,17 +78,17 @@ class LoopHarness:
         tts_cb = (lambda text, lang: self.tts_provider.synthesize(text, lang)) if self.tts_provider else None
         self.engine = SpecialistEngine(
             index_dir=args.index,
-            embedder=Embed(model_name=args.embed_model, prefer=args.embed_prefer),
+            embedder=Embed(model_name=args.embed_model),
             llm=make_llm(args.llm, ollama_model=args.ollama_model),
             stream_llm=stream_llm,
             mt=(lambda text, src, tgt: self.mt.translate(text, src, tgt)),
             tts=tts_cb,
         )
         print(
-            f"[providers] asr={getattr(self.asr,'name','(text)')}  mt={self.mt.name}  "
+            f"[providers] asr={getattr(self.asr,'name','(none)')}  mt={self.mt.name}  "
             f"tts={getattr(self.tts_provider,'name','(off)')}  llm={args.llm}  "
             f"stream={'on' if args.stream else 'off'}  "
-            f"embed={self.engine.embedder.backend}  in={self.in_lang} out={self.out_lang}"
+            f"in={self.in_lang} out={self.out_lang}"
         )
         if self.in_lang != "en" and self.mt.name == "none":
             print("[warn] input language is not English but MT is 'none' — the query "
@@ -99,6 +98,13 @@ class LoopHarness:
         if self.args.text:
             return self.args.text
         t0 = time.time()
+        if self.args.from_image:
+            from pocketinfer.models.ocr import Ocr
+
+            with open(self.args.from_image, "rb") as f:
+                raw = Ocr().infer(f.read(), self.in_lang)["text"]
+            print(f"[1 OCR ] ({(time.time()-t0)*1000:.0f}ms) -> {raw!r}")
+            return raw
         clip = mic.record()
         raw = self.asr.transcribe(clip, self.in_lang)
         print(f"[1 ASR ] ({(time.time()-t0)*1000:.0f}ms, {clip.duration_seconds:.1f}s audio) -> {raw!r}")
@@ -194,7 +200,7 @@ class LoopHarness:
     def run(self):
         once = self.run_once_stream if self.args.stream else self.run_once
         # Single-shot input modes.
-        if self.args.text:
+        if self.args.text or self.args.from_image:
             once(None)
             return
         if self.args.from_wav:
@@ -202,21 +208,11 @@ class LoopHarness:
 
             once(WavFileMic(self.args.from_wav))
             return
-        if self.args.say_question:
-            from local.audio import SayFileMic
-
-            once(SayFileMic(self.args.say_question, voice=self.args.say_voice))
-            return
 
         # Live mic loop.
-        if self.args.mic_device:
-            from local.audio import AlsaArecordMic
+        from local.audio import AlsaArecordMic
 
-            mic = AlsaArecordMic(self.args.mic_device)     # e.g. plughw:1,0 (Arducam mic)
-        else:
-            from local.audio import SoundDeviceMic
-
-            mic = SoundDeviceMic()
+        mic = AlsaArecordMic(self.args.mic_device)
         print("\n== Specialist voice loop == (Ctrl-C to quit)")
         try:
             while True:
@@ -226,17 +222,18 @@ class LoopHarness:
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Local Specialist voice loop.")
+    ap = argparse.ArgumentParser(description="Specialist voice loop.")
     # input modes
     ap.add_argument("--text", default=None, help="skip ASR: use this text as the request")
     ap.add_argument("--from-wav", default=None, help="use a WAV file as the spoken request")
-    ap.add_argument("--say-question", default=None, help="synthesize this question with 'say' then run it")
-    ap.add_argument("--say-voice", default=None, help="voice for --say-question (e.g. Lekha for Hindi)")
+    ap.add_argument("--from-image", default=None, help="read the request from a page image (OCR)")
+    ap.add_argument("--mic-device", default="plughw:1,0",
+                    help="ALSA capture device for the live mic (find it with arecord -l)")
     # providers (swappable)
-    ap.add_argument("--asr", default="vosk", help="vosk|whisper|bhashini")
-    ap.add_argument("--mt", default="none", help="none|bhashini")
-    ap.add_argument("--tts", default="say", help="say|bhashini")
-    ap.add_argument("--llm", default="extractive", help="extractive|ollama")
+    ap.add_argument("--asr", default="auto", help="auto|whisper|bhashini")
+    ap.add_argument("--mt", default="bhashini", help="bhashini|none")
+    ap.add_argument("--tts", default="bhashini", help="bhashini")
+    ap.add_argument("--llm", default="ollama", help="ollama|extractive")
     ap.add_argument("--stream", action="store_true",
                     help="stream the answer sentence-by-sentence: speak sentence N while "
                          "N+1 is still being generated/translated (cuts time-to-first-audio)")
@@ -247,14 +244,8 @@ def main():
     # models / paths
     ap.add_argument("--index", default=DEFAULT_INDEX)
     ap.add_argument("--embed-model", default="intfloat/multilingual-e5-small")
-    ap.add_argument("--embed-prefer", default="auto",
-                    help="auto|onnx|tfidf|sentence-transformers — match the index's embedder")
-    ap.add_argument("--vosk-model", default=None, help="path to a Vosk model dir")
     ap.add_argument("--whisper-model", default="small.en", help="faster-whisper model (e.g. small.en, base.en)")
-    ap.add_argument("--mic-device", default=None,
-                    help="ALSA capture device for the mic (e.g. plughw:1,0), uses arecord. "
-                         "Default: sounddevice's default input.")
-    ap.add_argument("--ollama-model", default="llama3.2:1b")
+    ap.add_argument("--ollama-model", default="qwen2.5:1.5b")
     ap.add_argument("--log-level", default="WARNING")
     args = ap.parse_args()
 

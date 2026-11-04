@@ -1,0 +1,6 @@
+# Copy to inventory.ini and adjust for your device.
+[specialist]
+suno-sutra ansible_user=suno-sutra ansible_python_interpreter=/usr/bin/python3
+
+# Reuse files already downloaded to another folder, for example:
+# suno-sutra ansible_user=suno-sutra specialist_assets_dir=/home/suno-sutra/specialist-assets
