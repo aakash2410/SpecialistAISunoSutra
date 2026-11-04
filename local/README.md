@@ -19,4 +19,4 @@ Each part is swappable by name:
 | `--tts` | `bhashini` |
 | `--llm` | `ollama`, `extractive` |
 
-The `e5` embedding model belongs in `local/models/`. Fetch it with `python3 tools/fetch_onnx_embedder.py`.
+The embedding model and answer verifier belong in `local/models/`. Fetch them with `python3 tools/fetch_onnx_embedder.py` and `python3 tools/fetch_onnx_verifier.py`.

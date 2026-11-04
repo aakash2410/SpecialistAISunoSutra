@@ -15,4 +15,4 @@ These are not stored here. `tools/fetch_assets.py` downloads the first group fro
 
 - Bhashini speech and translation models, and the CUDA build of CTranslate2 (CurrentAI)
 - Flite speech engine and voices (festvox)
-- Qwen2.5-1.5B (Apache-2.0), Whisper `small.en`, `multilingual-e5-small`
+- Qwen2.5-1.5B (Apache-2.0), Whisper `small.en`, `multilingual-e5-small`, `nli-deberta-v3-small` (Apache-2.0)

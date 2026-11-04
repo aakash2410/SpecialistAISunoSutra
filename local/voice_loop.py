@@ -178,9 +178,9 @@ class LoopHarness:
                 return
             if not header["printed"]:
                 print("[3 SPEC] streaming:")
-                for c in sr.citations:
-                    print(f"          · {c}")
                 header["printed"] = True
+            for c in sr.citations:
+                print(f"          · {c}")
             print(f"   · {sr.spoken_text}")
 
         speaking = self.tts_provider is not None

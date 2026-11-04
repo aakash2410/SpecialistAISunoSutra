@@ -12,7 +12,7 @@ import time
 import pytest
 
 from conftest import run_command
-from pocketinfer.specialist.grounding import REFUSAL_TEXT, build_grounding, is_refusal_response
+from pocketinfer.specialist.grounding import REFUSAL_TEXT
 from pocketinfer.specialist.vector_index import Retrieved
 
 
@@ -21,6 +21,7 @@ from pocketinfer.specialist.vector_index import Retrieved
     ("What is photosynthesis?", "Nutrition in Plants"),
     ("How do leaves make food for the plant?", "Nutrition in Plants"),
     ("How does heat travel through a metal spoon?", "Heat"),
+    ("What is conduction?", "Heat"),
 ])
 def test_teacher_gets_a_cited_answer(specialist, question, chapter):
     result = specialist.answer(question)
@@ -48,6 +49,11 @@ def test_device_explains_simplifies_or_answers(specialist, question, intent):
     "What caused the French Revolution?",
     "How do I repair a car engine?",
     "What is the capital of France?",
+    # Maths is not in the corpus, but these score as high as real science questions.
+    "What is a fraction?",
+    "Explain fractions",
+    "What is a numerator?",
+    "What is the Pythagoras theorem?",
 ])
 def test_device_says_so_when_the_topic_is_not_covered(specialist, question):
     result = specialist.answer(question)
@@ -56,25 +62,55 @@ def test_device_says_so_when_the_topic_is_not_covered(specialist, question):
     assert result.citations == []
 
 
-# Known failure, found in the stock model pilot. This is what the fine-tune is for.
-@pytest.mark.xfail(reason="Stock Qwen answers from memory. Fine-tuning is pending.", strict=False)
+@pytest.mark.parametrize("question, wrong_chapters", [
+    ("What is photosynthesis?", ["Respiration"]),
+    ("What is respiration?", ["Nutrition in Plants", "Changes"]),
+    ("What is speed?", ["Respiration", "Heat"]),
+])
+def test_device_does_not_cite_unrelated_chapters(specialist, question, wrong_chapters):
+    citations = " ".join(specialist.answer(question).citations)
+    assert citations
+    for chapter in wrong_chapters:
+        assert chapter not in citations
+
+
 @pytest.mark.parametrize("question, passage, memory_answer", [
     ("How many chambers does the human heart have?",
      "The heart is a muscular organ. It pumps blood through arteries to all parts of the body.",
      "four"),
-    ("What gas do plants release during photosynthesis?",
-     "Photosynthesis takes place in the green leaves of a plant. Chlorophyll captures sunlight.",
-     "oxygen"),
+    # Known failure. The verifier accepts this common fact the passage never states.
+    pytest.param("What gas do plants release during photosynthesis?",
+                 "Photosynthesis takes place in the green leaves of a plant. Chlorophyll captures sunlight.",
+                 "oxygen",
+                 marks=pytest.mark.xfail(reason="The verifier accepts some common knowledge.", strict=False)),
     ("How many bones does an adult human have?",
      "The skeleton gives shape and support to the body. Bones protect delicate organs.",
      "206"),
 ])
-def test_device_does_not_answer_from_memory(specialist, question, passage, memory_answer):
+def test_device_does_not_answer_from_memory(specialist, monkeypatch, question, passage, memory_answer):
     """The topic matches, but the approved passage does not contain the answer."""
     hit = Retrieved(0.95, passage, "uat", "uat", "uat", 1, "uat")
-    grounding = build_grounding(question, [hit], min_score=0.1)
-    reply = specialist.llm(grounding.system_prompt, grounding.user_prompt)
-    assert is_refusal_response(reply) or memory_answer not in reply.lower(), reply
+    monkeypatch.setattr(specialist.index, "search", lambda *args, **kwargs: [hit])
+    result = specialist.answer(question)
+    assert result.refused or memory_answer not in result.answer_en.lower(), result.answer_en
+
+
+# These share a word with the corpus, so they pass the gate. The verifier must then
+# stop the model's answer from memory.
+@pytest.mark.parametrize("question, memory_answer", [
+    ("What is the speed of light?", "kilomet"),
+    ("What is a heat wave?", "weather"),
+    ("What is the speed limit on a highway?", "law"),
+])
+def test_device_does_not_cite_a_chapter_for_an_answer_from_memory(specialist, question, memory_answer):
+    result = specialist.answer(question)
+    assert result.refused or memory_answer not in result.answer_en.lower(), result.answer_en
+
+
+# Known failure. The answer is true to the passage but does not answer the question.
+@pytest.mark.xfail(reason="The verifier checks support, not whether the question was answered.", strict=False)
+def test_device_refuses_rather_than_answering_a_different_question(specialist):
+    assert specialist.answer("how do I cook food").refused
 
 
 # ---------------------------------------------------- "It runs fully offline"
@@ -133,7 +169,7 @@ def test_refusal_is_spoken_in_hindi_too(specialist, bhashini_ready):
 
 # ---------------------------------- "The full loop runs under roughly 2-3 seconds"
 def test_typed_answer_starts_within_the_target_on_the_device(specialist, jetson):
-    specialist.answer("Ready?")  # the first call pays the model load
+    specialist.answer("What is speed?")  # the first call pays the model load
     started = time.time()
     next(specialist.stream_answer("What is photosynthesis?"))
     assert time.time() - started < 3.0

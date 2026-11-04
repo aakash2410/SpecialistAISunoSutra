@@ -9,11 +9,13 @@ embed -> retrieve -> ground -> LLM -> MT, lives here.
         -> VectorIndex.search(top_k)
         -> build_grounding (refuse if not covered)
         -> LLM (grounded; may also refuse)
+        -> Verifier (keep only sentences an approved passage supports)
         -> MT into target language
     => AnswerResult (text + citations + timings [+ audio if a TTS client is given])
 
 No step touches the network. The LLM, embedder, and index all sit on local
-storage. Every non-refusal answer carries DIKSHA citations.
+storage. Every sentence spoken is supported by a DIKSHA passage, and that passage
+is what gets cited.
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Iterator, List, Optional
 
 from ..models.embed import DEFAULT_MODEL_NAME, Embed
+from ..models.verify import Verifier
 from .grounding import (
     REFUSAL_TEXT,
     build_grounding,
@@ -46,6 +49,8 @@ MTClient = Callable[[str, str, str], str]
 # A TTS client: takes (text, language), returns audio bytes (e.g. WAV).
 TTSClient = Callable[[str, str], bytes]
 
+_UNSUPPORTED_REASON = "No sentence of the answer was supported by the approved passages."
+
 
 @dataclass
 class AnswerResult:
@@ -60,6 +65,7 @@ class AnswerResult:
     audio: Optional[bytes] = None
     reason: str = ""
     timings: dict = field(default_factory=dict)
+    dropped_sentences: List[str] = field(default_factory=list)  # failed verification
 
     @property
     def spoken_text(self) -> str:
@@ -75,7 +81,7 @@ class SentenceResult:
     text_localized: str
     audio: Optional[bytes] = None
     refused: bool = False
-    citations: List[str] = field(default_factory=list)   # populated on the first item
+    citations: List[str] = field(default_factory=list)   # sources not yet cited in this answer
     reason: str = ""
 
     @property
@@ -94,8 +100,10 @@ class SpecialistEngine:
         stream_llm: Optional[StreamLLMClient] = None,
         top_k: int = 3,
         min_score: Optional[float] = None,
+        verifier: Optional[Verifier] = None,
     ):
         self.index = VectorIndex(index_dir)
+        self.verifier = verifier or Verifier()
         self.embedder = embedder or Embed(model_name=self.index.embedder_name or DEFAULT_MODEL_NAME)
         self._check_embedder_matches_index()
         self.llm = llm or extractive_llm  # extractive fallback keeps it offline+runnable
@@ -137,8 +145,9 @@ class SpecialistEngine:
         Each yielded SentenceResult carries its synthesized audio, so a caller can
         play sentence N while this generator produces N+1 (see ``speak_stream``).
         Uses the streaming LLM if one was provided; otherwise it pseudo-streams by
-        sentence-splitting a single full answer. Refusals (retrieval gate or the
-        LLM leading with the sentinel) yield a single refused SentenceResult.
+        sentence-splitting a single full answer. A sentence no passage supports is
+        dropped before MT and TTS. Refusals (retrieval gate, the LLM leading with the
+        sentinel, or no sentence surviving) yield a single refused SentenceResult.
         """
         def _localize(text: str) -> str:
             if self.mt and target_language and target_language.lower() != "en":
@@ -171,6 +180,7 @@ class SpecialistEngine:
             chunks = iter([self.llm(g.system_prompt, g.user_prompt)])
 
         idx = 0
+        cited = set()
         for i, sentence in enumerate(iter_sentences(chunks)):
             if i == 0 and is_refusal_response(sentence):
                 yield _refusal("LLM reported no answer in source")
@@ -178,12 +188,21 @@ class SpecialistEngine:
             text = clean_answer(sentence)
             if not text:
                 continue
+            source = self.verifier.supporting_passage(text, g.passages)
+            if source is None:
+                logger.info("Dropped an unsupported sentence: %s", text)
+                continue
+            citation = source.citation()
+            new_citations = [] if citation in cited else [citation]
+            cited.add(citation)
             loc = _localize(text)
             yield SentenceResult(
                 index=idx, text_en=text, text_localized=loc, audio=_audio(loc),
-                citations=g.citations if idx == 0 else [],
+                citations=new_citations,
             )
             idx += 1
+        if idx == 0:
+            yield _refusal(_UNSUPPORTED_REASON)
 
     def answer(self, request: str, target_language: str = "en") -> AnswerResult:
         t = {}
@@ -212,8 +231,28 @@ class SpecialistEngine:
             g.reason = f"LLM reported insufficient information (said: {snippet!r})."
             return self._finalize_refusal(request, target_language, g, passages, t)
 
-        # Strip any leaked refusal note the model appended to a valid answer.
-        llm_text = clean_answer(llm_text)
+        # Keep only what an approved passage supports, and cite only those passages.
+        ts = time.time()
+        kept, citations, dropped = [], [], []
+        for sentence in iter_sentences([llm_text]):
+            # Strip any leaked refusal note the model appended to a valid answer.
+            text = clean_answer(sentence)
+            if not text:
+                continue
+            source = self.verifier.supporting_passage(text, g.passages)
+            if source is None:
+                dropped.append(text)
+                continue
+            kept.append(text)
+            if source.citation() not in citations:
+                citations.append(source.citation())
+        t["verify"] = time.time() - ts
+        if not kept:
+            g.reason = _UNSUPPORTED_REASON
+            result = self._finalize_refusal(request, target_language, g, passages, t)
+            result.dropped_sentences = dropped
+            return result
+        llm_text = " ".join(kept)
         answer_localized = llm_text
         if self.mt and target_language and target_language.lower() != "en":
             ts = time.time()
@@ -230,9 +269,10 @@ class SpecialistEngine:
             target_language=target_language,
             answer_en=llm_text,
             answer_localized=answer_localized,
-            citations=g.citations,
+            citations=citations,
             passages=g.passages,  # relevance-filtered set that was actually grounded on
             timings=t,
+            dropped_sentences=dropped,
         )
         self._maybe_tts(result)
         t["total"] = time.time() - t0

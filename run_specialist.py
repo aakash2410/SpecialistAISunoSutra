@@ -141,15 +141,11 @@ def _print_citations(citations):
 def answer_stream(engine, question, out_lang, backend, say_voice):
     from pocketinfer.specialist import speak_stream
 
-    printed_header = {"done": False}
-
     def on_sentence(sr):
         if sr.refused:
             print(f"\n  ⚠ {sr.spoken_text}\n      ({sr.reason})")
             return
-        if not printed_header["done"]:
-            _print_citations(sr.citations)
-            printed_header["done"] = True
+        _print_citations(sr.citations)
         print(f"  {sr.spoken_text}")
         if backend == "say":
             say_text(sr.spoken_text, say_voice)

@@ -35,11 +35,11 @@ def built_index(tmp_path_factory, e5_ready):
 
 
 @pytest.fixture
-def make_engine(built_index):
+def make_engine(built_index, verifier):
     from pocketinfer.specialist import SpecialistEngine
 
     def _make(**hooks):
-        return SpecialistEngine(index_dir=built_index, **hooks)
+        return SpecialistEngine(index_dir=built_index, verifier=verifier, **hooks)
 
     return _make
 
@@ -68,6 +68,55 @@ def test_engine_refuses_when_the_model_says_the_source_lacks_the_answer(make_eng
     result = engine.answer("What is photosynthesis?")
     assert result.refused
     assert result.citations == []
+
+
+# ------------------------------------------------- answers against the sources
+SUPPORTED = "Photosynthesis is the process by which green plants make their own food."
+INVENTED = "The Moon is made of green cheese."
+
+
+def test_unsupported_sentence_is_dropped_and_the_rest_kept(make_engine):
+    result = make_engine(llm=lambda system, user: f"{SUPPORTED} {INVENTED}").answer("What is photosynthesis?")
+    assert not result.refused
+    assert result.answer_en == SUPPORTED
+    assert result.dropped_sentences == [INVENTED]
+    assert "Photosynthesis" in result.citations[0]
+
+
+def test_answer_with_no_supported_sentence_is_refused(make_engine):
+    result = make_engine(llm=lambda system, user: INVENTED).answer("What is photosynthesis?")
+    assert result.refused
+    assert result.citations == []
+    assert "supported" in result.reason
+
+
+def test_streaming_drops_unsupported_sentences_before_speech(make_engine):
+    spoken = []
+
+    def tts(text, lang):
+        spoken.append(text)
+        return b"WAV"
+
+    engine = make_engine(llm=lambda system, user: f"{INVENTED} {SUPPORTED}", tts=tts)
+    results = list(engine.stream_answer("What is photosynthesis?"))
+    assert [r.text_en for r in results] == [SUPPORTED]
+    assert spoken == [SUPPORTED]
+    assert results[0].citations
+
+
+def test_streaming_refuses_when_nothing_survives(make_engine):
+    results = list(make_engine(llm=lambda system, user: INVENTED).stream_answer("What is photosynthesis?"))
+    assert len(results) == 1
+    assert results[0].refused
+
+
+def test_only_the_passage_behind_the_answer_is_cited(make_engine):
+    # Retrieval brings back several photosynthesis and plant passages for this one.
+    answer = "Oxygen is released during this process."
+    result = make_engine(llm=lambda system, user: answer).answer("how do leaves make food for the plant")
+    assert result.answer_en == answer
+    assert len(result.citations) == 1
+    assert "Photosynthesis" in result.citations[0]
 
 
 # ---------------------------------------------------- engine wiring, stand-ins

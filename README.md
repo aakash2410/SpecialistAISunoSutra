@@ -12,7 +12,8 @@ This file reflects the system as of 4 November 2026.
 | Fine-tuned model | Qwen2.5-1.5B, trained to refuse when a passage lacks the answer | **Pending, not started** |
 | Training data | Generated with free local models only | Pending |
 | Retrieval | `multilingual-e5-small` on ONNX, replacing TF-IDF | Running on the Jetson |
-| Hindi and Tamil speech input, translation, spoken output | Bhashini | Downloading |
+| Answer check | `nli-deberta-v3-small` on ONNX (Apache-2.0), tested against `open-jev` and chosen | Running on the Jetson |
+| Hindi and Tamil speech input, translation, spoken output | Bhashini | Downloaded, not installed |
 | English speech input | Whisper `small.en` | Not installed |
 | Reading textbook pages | Tesseract, because the bundled Bhashini service has no OCR | Code updated, not installed |
 
@@ -23,9 +24,10 @@ We moved off Llama because Mozilla's Human-Scale AI call excludes projects whose
 1. **Request:** the teacher speaks, shows a page or types.
 2. **Translate:** the request becomes English if it is in another language.
 3. **Retrieve:** e5 embeds the request and searches the local DIKSHA index.
-4. **Gate:** the device refuses if the best passage scores below the threshold (0.84).
+4. **Gate:** the device refuses unless a passage both scores above the threshold (0.80) and shares a key term with the request. Only those passages reach the model and the citations.
 5. **Answer:** Qwen rephrases the retrieved passages in English.
-6. **Respond:** the answer gets translated, spoken aloud and cited.
+6. **Check:** each sentence must be supported by a passage. Unsupported sentences get dropped, and the device refuses if none survive.
+7. **Respond:** the kept sentences get translated, spoken aloud and cited. Only the passages that support them are cited.
 
 Knowledge lives in the index, not the model, so new content needs no retraining. No step needs the internet at run time by design, but we have not yet tested this with the network off.
 
@@ -35,13 +37,37 @@ Knowledge lives in the index, not the model, so new content needs no retraining.
 
 | Measure | Result |
 |---|---|
-| First sentence | 1.09 s |
-| Full answer | 1.83 to 1.94 s |
+| First sentence, with the answer check | 0.73 to 1.14 s |
+| Full answer, with the answer check | 1.64 to 2.45 s |
+| Answer check, per answer | 0.29 to 0.82 s |
+| Refusal after the check | 1.47 to 2.09 s |
 | Embedding a question, on CPU | About 11 ms |
 | Answer model | 100% on GPU |
-| Retrieval check | 5 of 5 relevant questions answered, 4 of 4 off-topic questions refused |
+| Answer check model | About 600 MB of memory, on CPU |
+| Retrieval check | 14 of 14 relevant questions answered, 11 of 11 off-topic questions refused |
 
-The margins are thin. A romanised Hindi question scored exactly 0.84, and one off-topic question reached 0.804. The threshold was tuned on the same 10 passages and needs retuning on the real corpus.
+Score alone cannot do this job. "What is a fraction?" scored 0.847 on a corpus with no maths, higher than "What is conduction?" at 0.839, so the device answered from memory while citing Speed and Light. The gate now also needs a shared key term. The question set is small and hand-written, so this needs rechecking on the real corpus.
+
+The gate still lets through off-topic questions that share a word with the corpus. "What is the speed of light?" passes it, and Qwen answers 299,792 km/s from memory. The answer check exists to stop these, because it reads the answer and the gate does not.
+
+**Answer check comparison, using 55 hand-labelled cases with real retrieval and real Qwen answers.**
+
+| Setup | Covered questions answered | False answers let through |
+|---|---|---|
+| Gate only | 26/26 | 17/29 |
+| Gate + `open-jev` at 0.5 | 26/26 | 13/29 |
+| Gate + `open-jev` at 0.9 | 17/26 | 2/29 |
+| Gate + NLI, keeping supported sentences | 26/26 | 2/29 |
+
+These cases were labelled by hand and the check was tuned on the same set, so the numbers are probably optimistic.
+
+**Known gaps.**
+
+- The check accepts some common knowledge. It kept "Plants release oxygen" from a passage that does not say so.
+- It checks support, not relevance. "How do I cook food" can get a true sentence about plants that does not answer the question.
+- It can keep wrong details. It kept a mirror image being "upside down" where the passage says erect.
+- It can refuse a covered question if Qwen drifts too far. On the Jetson, one run refused "how does heat travel through a metal spoon".
+- Small wording changes move results, including capitalisation.
 
 **Stock model pilot on a Mac, using 24 hand-written cases with clean passages.**
 
@@ -53,7 +79,7 @@ The margins are thin. A romanised Hindi question scored exactly 0.84, and one of
 | Answer missing, refusal instruction added | 0/8 | 5/8 |
 | Replies that hit the token cap or repeated a sentence | 0/48 | 0/48 |
 
-The main failure is answering from memory when an on-topic passage lacks the answer. The retrieval gate cannot catch this, and it is the behaviour the fine-tune targets. The acceptance tests record this as a known failure until the fine-tune clears it.
+The main failure is answering from memory when an on-topic passage lacks the answer. The retrieval gate cannot catch this, and it is the behaviour the fine-tune targets. The answer check now stops most of these cases on the device.
 
 **Corpus.** The device holds a 10-passage starter set. We have 5,000 harvested pages from 232 books that are not indexed yet, and about 36% of the CC BY pages look garbled. DIKSHA lists 5,101 Class 7 English PDFs.
 
@@ -61,12 +87,11 @@ The main failure is answering from memory when an on-topic passage lacks the ans
 
 Software first, with no hardware needed:
 
-1. Finish the Bhashini download (1.65 GB).
-2. Run the Ansible role to install Bhashini, Whisper and Tesseract. It has not been run on a device yet.
-3. Test voice using audio files.
-4. Test the full loop with the network off.
-5. Clean and index the real corpus, then retune the threshold.
-6. Resume fine-tuning when we decide to.
+1. Run the Ansible role to install Bhashini, Whisper and Tesseract. It has not been run on a device yet.
+2. Test voice using audio files.
+3. Test the full loop with the network off.
+4. Clean and index the real corpus, then retune the threshold and recheck the answer check.
+5. Resume fine-tuning when we decide to.
 
 Hardware after that: a microphone, speaker and camera, plus a decision on a button and screen. The upstream kit code for these is no longer in this repo. It is still available [upstream](https://github.com/currentai-org/suno-sutra-sw).
 
@@ -88,7 +113,7 @@ Install steps are in [module/README.md](module/README.md).
 
 | Folder | Purpose |
 |---|---|
-| `python/pocketinfer/` | Retrieval, grounding, answer engine, model wrappers |
+| `python/pocketinfer/` | Retrieval, grounding, answer check, answer engine, model wrappers |
 | `run_specialist.py` | Typed questions in, grounded answers out |
 | `local/` | The full voice loop, from a WAV file, page image or microphone |
 | `corpus/`, `ingest/` | DIKSHA content and the pipeline that builds the index |

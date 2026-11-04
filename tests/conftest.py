@@ -47,6 +47,15 @@ def e5_ready():
 
 
 @pytest.fixture(scope="session")
+def verifier():
+    from pocketinfer.models.verify import Verifier, _resolve_dir
+
+    if not _resolve_dir():
+        pytest.skip("Answer verifier missing. Run: python3 tools/fetch_onnx_verifier.py")
+    return Verifier()
+
+
+@pytest.fixture(scope="session")
 def shipped_index_dir(e5_ready):
     if not os.path.exists(os.path.join(SHIPPED_INDEX, "embeddings.npy")):
         pytest.skip("No baked index. Run: python3 ingest/build_index.py")
@@ -95,8 +104,8 @@ def jetson():
 
 
 @pytest.fixture
-def specialist(shipped_index_dir, ollama_ready):
-    """The answer engine as the device runs it: shipped index, e5, real Qwen."""
+def specialist(shipped_index_dir, ollama_ready, verifier):
+    """The answer engine as the device runs it: shipped index, e5, verifier, real Qwen."""
     from pocketinfer.specialist import SpecialistEngine
     from pocketinfer.specialist.llm import ollama_grounded_client, ollama_grounded_stream_client
 
@@ -104,4 +113,5 @@ def specialist(shipped_index_dir, ollama_ready):
         index_dir=shipped_index_dir,
         llm=ollama_grounded_client(ollama_ready),
         stream_llm=ollama_grounded_stream_client(ollama_ready),
+        verifier=verifier,
     )
