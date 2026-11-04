@@ -51,7 +51,7 @@
     path: "{{ specialist_root }}/{{ item }}"
     state: directory
     mode: "0755"
-  loop: [app, corpus, models, models/whisper, tools]
+  loop: [app, corpus, models, tools]
 
 # ---------------------------------------------------------------------- assets
 - name: Copy the asset fetcher
@@ -166,6 +166,45 @@
     remote_src: true
     creates: "{{ specialist_bhashini_dir }}/main.py"
 
+# Bhashini holds 4.4 GB once loaded, which leaves too little for the rest of the
+# pipeline on an 8 GB Jetson, so Tamil speech input and Indic-to-Indic translation go.
+# Both remain in the downloaded archive if a larger device wants them back.
+- name: Remove the Bhashini models this build does not use
+  tags: [bhashini]
+  ansible.builtin.file:
+    path: "{{ specialist_bhashini_dir }}/{{ item }}"
+    state: absent
+  loop:
+    - asr/checkpoints/ta-conformer.onnx
+    - asr/checkpoints/ta-conformer.onnx.data
+    - nmt/checkpoints/indic-indic
+
+- name: Stop Bhashini loading Tamil speech input
+  tags: [bhashini]
+  ansible.builtin.replace:
+    path: "{{ specialist_bhashini_dir }}/asr/infer.py"
+    regexp: '^ *"ta": ort\.InferenceSession\(\n *f"\{checkpoint_dir\}/ta-conformer\.onnx"\n *\),\n'
+    replace: ""
+
+# nmt/infer.py counts "en" as an Indic language, so every request went to the
+# Indic-to-Indic model and the two dedicated English models sat unused. Without this,
+# removing that model makes all translation fail.
+- name: Send English translation to the dedicated models
+  tags: [bhashini]
+  ansible.builtin.replace:
+    path: "{{ specialist_bhashini_dir }}/nmt/infer.py"
+    regexp: '^INDIC_LANGUAGES = set\(iso_to_flores\.keys\(\)\)$'
+    replace: 'INDIC_LANGUAGES = set(iso_to_flores.keys()) - {"en"}'
+
+# On the CPU this CTranslate2 build only runs float32, which took about 6.5 s for a short
+# sentence and held far more memory. On the GPU the same sentence takes about 0.2 s.
+- name: Run translation on the GPU
+  tags: [bhashini]
+  ansible.builtin.replace:
+    path: "{{ specialist_bhashini_dir }}/nmt/infer.py"
+    regexp: 'device="cpu",'
+    replace: 'device="cuda",'
+
 # The wheel goes in first so the requirements below keep the CUDA build rather than
 # replacing it with a CPU build.
 - name: Install CTranslate2 into the Bhashini environment
@@ -174,6 +213,20 @@
     name: "{{ specialist_assets_dir }}/ctranslate2-4.6.3-cp310-cp310-linux_aarch64.whl"
     virtualenv: "{{ specialist_bhashini_dir }}/venv"
     virtualenv_command: python3 -m venv
+
+# Bhashini only uses PyTorch on the CPU, in asr/infer.py. The CUDA builds need NVIDIA
+# libraries that are not in JetPack's package sources, so use the CPU build. It goes
+# in first so the requirements below keep it. The import check also repairs an
+# environment that already holds a CUDA build that cannot load.
+- name: Install PyTorch for CPU into the Bhashini environment
+  tags: [bhashini]
+  ansible.builtin.shell: >-
+    {{ specialist_bhashini_dir }}/venv/bin/python -c "import torch" 2>/dev/null
+    && echo present
+    || {{ specialist_bhashini_dir }}/venv/bin/pip install --force-reinstall
+    --index-url {{ specialist_torch_cpu_index }} torch
+  register: specialist_torch_install
+  changed_when: "'present' not in specialist_torch_install.stdout"
 
 - name: Install the Bhashini Python packages
   tags: [bhashini]
@@ -241,18 +294,36 @@
   become: true
   ansible.builtin.systemd:
     name: bhashini_models
-    state: started
+    state: restarted
     enabled: true
     daemon_reload: true
+  changed_when: false
+
+# systemd reports a successful start even if the service dies straight after.
+- name: Wait for Bhashini to answer
+  tags: [bhashini]
+  ansible.builtin.uri:
+    url: http://127.0.0.1:11400/health
+  register: specialist_bhashini_health
+  retries: 40
+  delay: 5
+  until: specialist_bhashini_health.status == 200
+
+- name: Translate in both directions
+  tags: [bhashini]
+  ansible.builtin.uri:
+    url: http://127.0.0.1:11400/nmt
+    method: POST
+    body_format: json
+    body: "{{ item }}"
+    timeout: 120
+  loop:
+    - {text: "Oxygen is released.", src_lang: en, tgt_lang: hi}
+    - {text: "प्रकाश संश्लेषण क्या है?", src_lang: hi, tgt_lang: en}
+  loop_control:
+    label: "{{ item.src_lang }} to {{ item.tgt_lang }}"
 
 # ------------------------------------------------------------------------- app
-- name: Install CTranslate2 into the Specialist environment
-  tags: [app]
-  ansible.builtin.pip:
-    name: "{{ specialist_assets_dir }}/ctranslate2-4.6.3-cp310-cp310-linux_aarch64.whl"
-    virtualenv: "{{ specialist_venv }}"
-    virtualenv_command: python3 -m venv
-
 - name: Copy the Python requirements
   tags: [app]
   ansible.builtin.copy:
@@ -265,15 +336,6 @@
   ansible.builtin.pip:
     requirements: "{{ specialist_root }}/requirements-specialist.txt"
     virtualenv: "{{ specialist_venv }}"
-
-- name: Download the Whisper model
-  tags: [app]
-  ansible.builtin.command:
-    cmd: >-
-      {{ specialist_venv }}/bin/python -c "from faster_whisper import WhisperModel;
-      WhisperModel('{{ specialist_whisper_model }}', device='cpu', compute_type='int8',
-      download_root='{{ specialist_root }}/models/whisper')"
-    creates: "{{ specialist_root }}/models/whisper/models--Systran--faster-whisper-{{ specialist_whisper_model }}"
 
 - name: Install the pipeline code
   tags: [app]
@@ -343,7 +405,7 @@
 - name: Check the CTranslate2 build and the Tesseract language packs
   tags: [verify]
   ansible.builtin.shell: |
-    {{ specialist_venv }}/bin/python -c "import ctranslate2 as c; print('CTranslate2', c.__version__, c.get_supported_compute_types('cuda'))"
+    {{ specialist_bhashini_dir }}/venv/bin/python -c "import ctranslate2 as c; print('CTranslate2', c.__version__, c.get_supported_compute_types('cuda'))"
     tesseract --list-langs | tail -n +2 | tr '\n' ' '
   register: specialist_check_tools
   changed_when: false

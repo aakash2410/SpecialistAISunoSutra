@@ -3,7 +3,7 @@
 Every provider implements a contract from ``pocketinfer.specialist.providers``, so
 they are interchangeable. Pick them by name on the command line:
 
-    --asr auto|whisper|bhashini    (auto: Whisper for English, Bhashini otherwise)
+    --asr auto|bhashini|whisper    (auto: Bhashini. Whisper must be asked for by name)
     --mt  bhashini|none
     --tts bhashini
     --llm ollama|extractive

@@ -7,8 +7,7 @@ This role installs the full software pipeline on a Jetson running JetPack 6. It 
 | Part | Where |
 |---|---|
 | Answer model, Qwen2.5-1.5B | Ollama |
-| Hindi and Tamil speech input, translation, speech output | Bhashini service on `127.0.0.1:11400`, in `/opt/specialist/bhashini_models` |
-| English speech input, Whisper `small.en` | `/opt/specialist/models/whisper` |
+| Hindi speech input, translation to and from English, speech output | Bhashini service on `127.0.0.1:11400`, in `/opt/specialist/bhashini_models` |
 | Retrieval, `multilingual-e5-small` | `/opt/specialist/models` |
 | Answer verifier, `nli-deberta-v3-small` | `/opt/specialist/models` |
 | Reading pages, Tesseract | System package |
@@ -43,7 +42,6 @@ Change these in the inventory or with `-e`. The full list is in `ansible/roles/s
 | Setting | Use it to |
 |---|---|
 | `specialist_llm_model` | Swap the answer model, for example to the fine-tuned model once it exists |
-| `specialist_whisper_model` | Change the English speech model |
 | `specialist_ocr_packs` | Choose the languages for reading pages |
 | `specialist_ollama_source` | Install Ollama from `docker` where GitHub downloads are slow |
 | `specialist_assets_dir` | Reuse files you have already downloaded |

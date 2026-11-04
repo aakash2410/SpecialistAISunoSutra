@@ -87,6 +87,8 @@ def bhashini_ready():
 
 @pytest.fixture(scope="session")
 def whisper_ready():
+    if os.path.exists("/etc/nv_tegra_release"):
+        pytest.skip("Whisper does not fit in memory beside the pipeline on the Jetson")
     if importlib.util.find_spec("faster_whisper") is None:
         pytest.skip("faster-whisper is not installed")
 

@@ -13,9 +13,9 @@ This file reflects the system as of 4 November 2026.
 | Training data | Generated with free local models only | Pending |
 | Retrieval | `multilingual-e5-small` on ONNX, replacing TF-IDF | Running on the Jetson |
 | Answer check | `nli-deberta-v3-small` on ONNX (Apache-2.0), tested against `open-jev` and chosen | Running on the Jetson |
-| Hindi and Tamil speech input, translation, spoken output | Bhashini | Downloaded, not installed |
-| English speech input | Whisper `small.en` | Not installed |
-| Reading textbook pages | Tesseract, because the bundled Bhashini service has no OCR | Code updated, not installed |
+| Hindi speech input, translation through English, spoken output | Bhashini, without Tamil speech input or Indic-to-Indic translation, to save memory | Installed, memory under the full stack not yet measured |
+| English speech input | Left out: Whisper does not fit in memory beside the rest of the pipeline, and Bhashini's speech model only covers Hindi | Removed. Typed English still works |
+| Reading textbook pages | Tesseract, because the bundled Bhashini service has no OCR | Installed |
 
 We moved off Llama because Mozilla's Human-Scale AI call excludes projects whose core depends on a slimmed-down frontier model, and it names Llama 1B and 3B as examples. Whether a small Qwen also counts is still an open question for Mozilla.
 
@@ -33,7 +33,7 @@ Knowledge lives in the index, not the model, so new content needs no retraining.
 
 ## Results so far
 
-**Jetson Orin Nano 8GB Super, typed English only. Voice has not been measured.**
+**Jetson Orin Nano 8GB Super in 25 W mode, typed English.**
 
 | Measure | Result |
 |---|---|
@@ -49,6 +49,18 @@ Knowledge lives in the index, not the model, so new content needs no retraining.
 Score alone cannot do this job. "What is a fraction?" scored 0.847 on a corpus with no maths, higher than "What is conduction?" at 0.839, so the device answered from memory while citing Speed and Light. The gate now also needs a shared key term. The question set is small and hand-written, so this needs rechecking on the real corpus.
 
 The gate still lets through off-topic questions that share a word with the corpus. "What is the speed of light?" passes it, and Qwen answers 299,792 km/s from memory. The answer check exists to stop these, because it reads the answer and the gate does not.
+
+**Jetson, full Hindi voice loop on the real 9,619-passage index, in 25 W mode, using a synthetic voice.** Moving translation from the CPU to the GPU made the difference:
+
+| Step, once warm | Translation on CPU | Translation on GPU |
+|---|---|---|
+| Hindi speech to text | 0.21 to 0.30 s | 0.22 to 0.26 s |
+| Hindi to English | 6.21 to 6.51 s | 0.11 to 0.14 s |
+| English to Hindi, one sentence | 9.15 to 12.76 s | 0.59 to 0.68 s |
+| Hindi speech output | About 0.9 s | About 0.9 s |
+| **First sentence ready** | **18.41 to 22.12 s** | **2.69 to 3.04 s** |
+
+**Jetson memory, out of 7.4 GB with the desktop on.** With translation on the GPU, Bhashini holds about 1.5 GB of process memory, down from 4.4 GB originally, and free memory stayed above 2 GB through the Hindi loop with Qwen fully on the GPU. Whisper was left out when Bhashini was larger, because it pushed Qwen 31% onto the CPU, and it has not been retested since this change.
 
 **Answer check comparison, using 55 hand-labelled cases with real retrieval and real Qwen answers.**
 
@@ -87,7 +99,7 @@ The main failure is answering from memory when an on-topic passage lacks the ans
 
 Software first, with no hardware needed:
 
-1. Run the Ansible role to install Bhashini, Whisper and Tesseract. It has not been run on a device yet.
+1. Run the system integration and acceptance tests on the Jetson.
 2. Test voice using audio files.
 3. Test the full loop with the network off.
 4. Clean and index the real corpus, then retune the threshold and recheck the answer check.

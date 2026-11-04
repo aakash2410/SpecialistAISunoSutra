@@ -1,0 +1,12 @@
+{
+  "embedder": "intfloat/multilingual-e5-small",
+  "embedder_backend": "onnx",
+  "dim": 384,
+  "num_chunks": 9619,
+  "num_documents": 3454,
+  "chunk_max_words": 120,
+  "chunk_overlap": 25,
+  "recommended_min_score": 0.8,
+  "built_at": "2026-11-04T07:57:07.175109+00:00",
+  "corpus": "diksha_g7_all"
+}

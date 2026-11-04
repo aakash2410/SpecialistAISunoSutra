@@ -11,7 +11,3 @@ ollama
 # Retrieval: multilingual-e5-small on ONNX, with no PyTorch.
 onnxruntime
 tokenizers
-
-# English speech-to-text. The role installs the CUDA build of CTranslate2 first,
-# and pip keeps it because it already satisfies this package's requirement.
-faster-whisper

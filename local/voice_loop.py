@@ -60,7 +60,12 @@ class LoopHarness:
         # Providers (each is swappable via the factory names).
         asr = args.asr
         if asr == "auto":
-            asr = "whisper" if self.in_lang == "en" else "bhashini"
+            # Whisper does not fit in memory beside the rest of the pipeline on an 8 GB
+            # Jetson, so English speech has to be asked for by name with --asr whisper.
+            if self.in_lang == "en" and not (args.text or args.from_image):
+                sys.exit("English speech input is not enabled on this device. "
+                         "Speak in Hindi, or use --text or --from-image.")
+            asr = "bhashini"
         self.asr = None if (args.text or args.from_image) else make_asr(asr, whisper_model=args.whisper_model)
         self.mt = make_mt(args.mt)                       # used for query-side translation too
         self.tts_provider = None if args.no_speak else make_tts(args.tts)

@@ -15,9 +15,6 @@ specialist_assets_dir: "{{ specialist_root }}/assets"
 # Answer model. Replace this with the fine-tuned model once it exists.
 specialist_llm_model: qwen2.5:1.5b
 
-# English speech-to-text. Hindi and Tamil use Bhashini.
-specialist_whisper_model: small.en
-
 # How to install Ollama if it is missing: "script" uses ollama.com/install.sh, and
 # "docker" copies it out of the official image. Use "docker" where GitHub downloads
 # are slow, because the install script cannot resume.
@@ -26,8 +23,10 @@ specialist_ollama_source: script
 # Tesseract language packs for reading textbook pages.
 specialist_ocr_packs: [hin, tam, tel, mar, guj, ben, pan, kan]
 
-# Package index for the Jetson build of PyTorch used by Bhashini.
+# Package index for the Jetson builds of Bhashini's Python packages.
 specialist_torch_index: https://pypi.jetson-ai-lab.io/jp6/cu126
+# Package index for the CPU build of PyTorch, which Bhashini uses for speech input.
+specialist_torch_cpu_index: https://download.pytorch.org/whl/cpu
 
 # Free disk space required before installing, in GB.
 specialist_min_free_gb: 15

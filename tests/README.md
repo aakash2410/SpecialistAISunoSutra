@@ -19,7 +19,7 @@ A test that needs something this machine lacks skips and names it. A full pass n
 
 ## Current results
 
-On a Mac with Ollama, Whisper and Tesseract, without Bhashini: 44 passed, 6 skipped, 2 expected failures. The suites have not been run on the Jetson yet.
+On the Jetson with the full stack, each test in its own process: 47 passed, 3 skipped, 2 expected failures, 1 failed. The failure was `test_full_hindi_voice_loop_meets_the_target_on_the_device`, at 12.6 s against the 3 s target. It passed after translation moved to the GPU, along with the other live Hindi tests, but the full suite has not been rerun since. The skips are Whisper, which is left out, and two harvest tests that need PyMuPDF, which only runs off the device.
 
 The 2 expected failures are known gaps in the answer check. It accepts some common knowledge the passage never states, and it checks that a sentence is supported, not that it answers the question.
 

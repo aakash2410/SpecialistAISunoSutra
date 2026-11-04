@@ -5,7 +5,7 @@
       "name": "bhashini_models.zip",
       "sha256": "144b08a29559530ddc1e3ad0833ad316cf24c26e87a338901d8a0281835ad50d",
       "size": 1646462178,
-      "purpose": "Hindi and Tamil speech-to-text, translation, service code"
+      "purpose": "Hindi speech-to-text, translation, service code"
     },
     {
       "name": "ctranslate2-0.1.1-Linux.deb",

@@ -13,6 +13,7 @@ Group={{ specialist_user }}
 WorkingDirectory={{ specialist_bhashini_dir }}
 ExecStart={{ specialist_bhashini_dir }}/venv/bin/python {{ specialist_bhashini_dir }}/main.py
 Restart=always
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
