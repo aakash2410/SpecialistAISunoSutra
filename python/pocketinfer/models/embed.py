@@ -19,10 +19,11 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL_NAME = "intfloat/multilingual-e5-small"
 
-# e5 has a HIGH similarity floor (unrelated text still scores ~0.80), so the gate
-# sits at ~0.84 — empirically between out-of-corpus tops (~0.76-0.81) and in-corpus
-# tops (~0.88-0.91) on the starter corpus. Retune per corpus with a threshold sweep.
-RECOMMENDED_MIN_SCORE = 0.84
+# e5 has a HIGH similarity floor (unrelated text still scores ~0.80), and on-topic and
+# off-topic scores overlap (0.839 vs 0.847 on the starter corpus). So this only drops
+# the clearly unrelated; the key-term check in grounding.py does the real separating.
+# Retune per corpus with a threshold sweep.
+RECOMMENDED_MIN_SCORE = 0.80
 
 # Where to find the ONNX model files (a dir with tokenizer.json + a *.onnx).
 _ONNX_ENV_DIR = "SPECIALIST_ONNX_DIR"

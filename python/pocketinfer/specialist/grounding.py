@@ -5,8 +5,8 @@ the LLM may answer *only* from the retrieved DIKSHA passages, and the device
 says so when the content doesn't cover the question.
 
 Two refusal gates:
-  1. Retrieval gate  — if the best passage's similarity is below threshold, the
-     corpus almost certainly doesn't cover the request, so we refuse before
+  1. Retrieval gate  — if no passage both scores above the threshold and shares a
+     key term with the request, the corpus doesn't cover it, so we refuse before
      spending an LLM call.
   2. Generation gate — the system prompt forbids outside knowledge and tells the
      LLM to emit a refusal sentinel if the passages are insufficient; we detect
@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Set
 
 from .vector_index import Retrieved
 
@@ -45,6 +45,19 @@ INTENT_PATTERNS = {
         r"\bsamjha", r"\bbatao\b", r"\bkya hai\b", r"\bkya hota\b",
     ],
 }
+
+
+# Words that say nothing about a request's topic, including a few romanized-Hindi
+# request words so "mujhe photosynthesis samjhaye" reduces to its topic.
+_STOPWORDS = set(
+    """the and but for with from into about over under then this that these those its
+    are was were been being you they she him her his them their your our his who whom
+    how what why when where which can could should would will shall may might must not
+    yes some any all each more most other than there here also such only very does did
+    has had have explain simplify simple describe define tell give meaning mean make
+    makes made need needs use used using work works happen happens please
+    mujhe mein hindi kya kyon kaise batao samjhao samjhaye samjha aur""".split()
+)
 
 
 @dataclass
@@ -74,6 +87,22 @@ def _instruction(intent: str) -> str:
     }[intent]
 
 
+def _content_terms(text: str) -> Set[str]:
+    """The words that carry a request's topic, lowercased with plurals folded."""
+    terms = set()
+    for word in re.findall(r"[^\W\d_]+", text.lower(), flags=re.UNICODE):
+        if len(word) < 3 or word in _STOPWORDS:
+            continue
+        terms.add(re.sub(r"(?:es|s)$", "", word) if len(word) > 4 else word)
+    return terms
+
+
+def _is_relevant(passage: Retrieved, request_terms: Set[str], min_score: float) -> bool:
+    if passage.score < min_score:
+        return False
+    return bool(request_terms & _content_terms(f"{passage.text} {passage.chapter} {passage.section}"))
+
+
 def build_grounding(
     request: str,
     passages: List[Retrieved],
@@ -82,21 +111,22 @@ def build_grounding(
     """Decide whether to answer, and if so build the grounded LLM prompts."""
     intent = classify_intent(request)
 
-    # Gate 1: nothing retrieved, or nothing close enough.
-    if not passages or passages[0].score < min_score:
+    # Gate 1: a passage must score well AND share a key term with the request. e5
+    # scores everything high, so score alone cannot separate them: "what is a
+    # fraction" outscored "what is conduction" on a corpus with no maths. This also
+    # keeps unrelated chapters out of the prompt and the citations.
+    request_terms = _content_terms(request)
+    relevant = [p for p in passages if _is_relevant(p, request_terms, min_score)]
+    if not relevant:
         best = passages[0].score if passages else 0.0
         return GroundingResult(
             refused=True,
             intent=intent,
             passages=passages,
-            reason=f"Best passage similarity {best:.2f} < threshold {min_score:.2f}.",
+            reason=f"No passage covers this request (best similarity {best:.2f}, "
+                   f"threshold {min_score:.2f}).",
         )
 
-    # Only ground on passages that actually clear the relevance threshold — drops
-    # low-scoring noise passages from both the prompt (faster) and the citations
-    # (a teacher shouldn't see an unrelated chapter cited). The gate above
-    # guarantees at least passages[0] qualifies.
-    relevant = [p for p in passages if p.score >= min_score]
     numbered = []
     citations = []
     for i, p in enumerate(relevant, 1):
