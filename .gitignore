@@ -243,3 +243,7 @@ local/models/
 
 # Large training harvest, rebuilt with ingest/diksha_pull.py
 corpus/diksha_g7_full/
+
+# Fine-tuning data and checkpoints, rebuilt with training/
+training/data/
+training/runs/

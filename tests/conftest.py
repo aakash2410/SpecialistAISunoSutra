@@ -56,6 +56,16 @@ def verifier():
 
 
 @pytest.fixture(scope="session")
+def safety_model():
+    from pocketinfer.specialist.safety import load_safety_model
+
+    try:
+        return load_safety_model()
+    except RuntimeError as e:
+        pytest.skip(str(e))
+
+
+@pytest.fixture(scope="session")
 def shipped_index_dir(e5_ready):
     if not os.path.exists(os.path.join(SHIPPED_INDEX, "embeddings.npy")):
         pytest.skip("No baked index. Run: python3 ingest/build_index.py")
@@ -106,7 +116,7 @@ def jetson():
 
 
 @pytest.fixture
-def specialist(shipped_index_dir, ollama_ready, verifier):
+def specialist(shipped_index_dir, ollama_ready, verifier, safety_model):
     """The answer engine as the device runs it: shipped index, e5, verifier, real Qwen."""
     from pocketinfer.specialist import SpecialistEngine
     from pocketinfer.specialist.llm import ollama_grounded_client, ollama_grounded_stream_client
@@ -116,4 +126,5 @@ def specialist(shipped_index_dir, ollama_ready, verifier):
         llm=ollama_grounded_client(ollama_ready),
         stream_llm=ollama_grounded_stream_client(ollama_ready),
         verifier=verifier,
+        safety_model=safety_model,
     )

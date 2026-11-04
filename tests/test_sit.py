@@ -35,11 +35,11 @@ def built_index(tmp_path_factory, e5_ready):
 
 
 @pytest.fixture
-def make_engine(built_index, verifier):
+def make_engine(built_index, verifier, safety_model):
     from pocketinfer.specialist import SpecialistEngine
 
     def _make(**hooks):
-        return SpecialistEngine(index_dir=built_index, verifier=verifier, **hooks)
+        return SpecialistEngine(index_dir=built_index, verifier=verifier, safety_model=safety_model, **hooks)
 
     return _make
 
@@ -71,7 +71,7 @@ def test_engine_refuses_when_the_model_says_the_source_lacks_the_answer(make_eng
 
 
 # ------------------------------------------------------------------ harvesting
-def test_garbled_harvest_is_repaired_indexed_and_answered(tmp_path, tesseract_ready, e5_ready, verifier):
+def test_garbled_harvest_is_repaired_indexed_and_answered(tmp_path, tesseract_ready, e5_ready, verifier, safety_model):
     """A junk text layer goes through real OCR, into the real index, out as a cited answer."""
     fitz = pytest.importorskip("fitz")
     from ingest.build_index import build
@@ -119,7 +119,8 @@ def test_garbled_harvest_is_repaired_indexed_and_answered(tmp_path, tesseract_re
     (corpus / "raw" / "chapters.json").write_text(json.dumps({"collection": {}, "documents": kept}))
     assert len(load_local(str(corpus / "raw" / "chapters.json"))) == 2
     build(str(corpus), model_name="intfloat/multilingual-e5-small", max_words=120, overlap=25)
-    result = SpecialistEngine(index_dir=str(corpus / "index"), verifier=verifier).answer("What is photosynthesis?")
+    result = SpecialistEngine(index_dir=str(corpus / "index"), verifier=verifier,
+                              safety_model=safety_model).answer("What is photosynthesis?")
     assert not result.refused, result.reason
     assert "scan" in result.citations[0]
 

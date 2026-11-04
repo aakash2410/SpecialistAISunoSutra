@@ -7,9 +7,12 @@ The answer model never generates text for these.
 
 Two independent checks, because neither is enough alone:
   * Patterns catch plain statements of intent, without touching the curriculum.
-  * The answer verifier's NLI model, asked whether the request matches each concern.
+  * An NLI model fine-tuned for this job, asked whether the request matches each concern
+    compared with a set of safe labels.
 
-Compared with a set of safe labels, this adds no model and no memory to the device.
+It is a separate model from the answer verifier, because fine-tuning one model for both
+jobs caught more unsafe requests but blocked more good answers. If it is missing this
+raises rather than letting requests through unchecked.
 
 DRAFT WORDING: the responses and helpline numbers need sign-off from someone with
 safeguarding experience before this reaches a classroom.
@@ -21,9 +24,13 @@ import re
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-from ..models.verify import Verifier
+from ..models.verify import Verifier, _resolve_dir
 
-# Tuned on half of a labelled question set, as an entailment-minus-contradiction margin.
+_DIR_ENV = "SPECIALIST_SAFETY_DIR"
+_DIRNAME = "nli-safety-onnx"
+
+# An entailment-minus-contradiction margin, tuned on half of a labelled question set with
+# the base model. Not yet retuned for the fine-tuned one.
 NLI_MARGIN = -1.07
 
 _PATTERNS = {
@@ -107,6 +114,16 @@ class SafetyFlag:
     source: str             # "pattern" or "nli"
     response_en: str
     response_hi: str
+
+
+def load_safety_model() -> Verifier:
+    found = _resolve_dir(env=_DIR_ENV, dirname=_DIRNAME)
+    if not found:
+        raise RuntimeError(
+            f"Safety model not found. Put it in local/models/{_DIRNAME} or set {_DIR_ENV} "
+            "to a dir with model.onnx + tokenizer.json + config.json."
+        )
+    return Verifier(found)
 
 
 class SafetyCheck:

@@ -4,7 +4,7 @@
 #   ./scripts/make_module.sh [--tar]
 #
 # Produces dist/specialist-module/: the pipeline code, the e5 embedding model, the
-# answer verifier, the baked DIKSHA indexes and the Ansible role. Bhashini and the CUDA
+# answer verifier, the safety model, the baked DIKSHA indexes and the Ansible role. Bhashini and the CUDA
 # build of CTranslate2 are too large to ship here, so the role fetches them on the device.
 # Re-run this after any code or corpus change.
 
@@ -15,6 +15,7 @@ OUT="$ROOT/dist/specialist-module"
 PKG="$ROOT/python/pocketinfer"
 E5="$ROOT/local/models/multilingual-e5-small-onnx"
 VERIFIER="$ROOT/local/models/nli-deberta-v3-small-onnx"
+SAFETY="$ROOT/local/models/nli-safety-onnx"
 VERSION="$(date +%Y.%m.%d)"
 
 echo "==> Building Specialist module $VERSION"
@@ -24,6 +25,10 @@ if [ ! -f "$E5/tokenizer.json" ]; then
 fi
 if [ ! -f "$VERIFIER/model.onnx" ]; then
   echo "!! No answer verifier at $VERIFIER. Run: python3 tools/fetch_onnx_verifier.py" >&2
+  exit 1
+fi
+if [ ! -f "$SAFETY/model.onnx" ]; then
+  echo "!! No safety model at $SAFETY. Export one with training/export_nli.py" >&2
   exit 1
 fi
 rm -rf "$OUT"
@@ -41,7 +46,7 @@ mkdir -p "$OUT/payload/app/local"
 cp "$ROOT/local/"*.py "$OUT/payload/app/local/"
 
 # --- models and tools --------------------------------------------------------
-cp -R "$E5" "$VERIFIER" "$OUT/payload/models/"
+cp -R "$E5" "$VERIFIER" "$SAFETY" "$OUT/payload/models/"
 cp "$ROOT/tools/fetch_assets.py" "$ROOT/module/assets.json" "$OUT/payload/tools/"
 
 # --- content: baked indexes only, not raw harvests or backups ----------------

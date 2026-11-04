@@ -33,14 +33,14 @@ _DIRNAME = "nli-deberta-v3-small-onnx"
 _SENTENCE_RE = re.compile(r"(?<=[.!?;])\s+")
 
 
-def _resolve_dir(explicit: Optional[str] = None) -> Optional[str]:
+def _resolve_dir(explicit: Optional[str] = None, env: str = _DIR_ENV, dirname: str = _DIRNAME) -> Optional[str]:
     here = os.path.dirname(os.path.abspath(__file__))            # .../python/pocketinfer/models
     repo_root = os.path.abspath(os.path.join(here, "..", "..", ".."))
     candidates = [
         explicit,
-        os.environ.get(_DIR_ENV),
-        os.path.join(repo_root, "local", "models", _DIRNAME),    # dev checkout
-        os.path.join("/opt/specialist/models", _DIRNAME),        # device data dir
+        os.environ.get(env),
+        os.path.join(repo_root, "local", "models", dirname),     # dev checkout
+        os.path.join("/opt/specialist/models", dirname),         # device data dir
     ]
     for c in candidates:
         if c and all(os.path.exists(os.path.join(c, f))

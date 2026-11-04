@@ -36,7 +36,7 @@ from .grounding import (
     is_refusal_response,
     iter_sentences,
 )
-from .safety import SafetyCheck
+from .safety import SafetyCheck, load_safety_model
 from .vector_index import Retrieved, VectorIndex
 
 logger = logging.getLogger(__name__)
@@ -102,10 +102,11 @@ class SpecialistEngine:
         top_k: int = 3,
         min_score: Optional[float] = None,
         verifier: Optional[Verifier] = None,
+        safety_model: Optional[Verifier] = None,
     ):
         self.index = VectorIndex(index_dir)
         self.verifier = verifier or Verifier()
-        self.safety = SafetyCheck(self.verifier)
+        self.safety = SafetyCheck(safety_model or load_safety_model())
         self.embedder = embedder or Embed(model_name=self.index.embedder_name or DEFAULT_MODEL_NAME)
         self._check_embedder_matches_index()
         self.llm = llm or extractive_llm  # extractive fallback keeps it offline+runnable

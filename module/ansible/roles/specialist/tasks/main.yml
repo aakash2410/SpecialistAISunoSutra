@@ -344,7 +344,7 @@
     dest: "{{ specialist_root }}/app/"
     mode: "0644"
 
-- name: Install the embedding model and answer verifier
+- name: Install the embedding model, answer verifier and safety model
   tags: [app]
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../payload/models/"
