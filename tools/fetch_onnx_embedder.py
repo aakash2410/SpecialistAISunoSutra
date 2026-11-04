@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Download the ONNX embedding model (multilingual-e5-small) + tokenizer.
 
-The Specialist's ONNX backend runs this model on onnxruntime — no torch/sklearn,
+The Specialist runs this model on onnxruntime — no torch/sklearn,
 so it avoids the Jetson dependency conflicts. Run this ONCE (online, off-device
 or on-device with internet); the files then sit on local storage for fully
 offline retrieval.
@@ -78,12 +78,7 @@ def main() -> int:
             print(f"  ✗ failed to fetch {name}: {e}", file=sys.stderr)
             return 1
 
-    print("\nDone. Verify with:")
-    print("  python3 -c \"import sys; sys.path.insert(0,'python'); "
-          "from pocketinfer.models.embed import Embed; "
-          f"print(Embed(prefer='onnx', onnx_model_dir='{args.dest}').verify("
-          "{'prefer':'onnx','onnx_model_dir':'" + args.dest + "'}))\"")
-    print("Then rebuild the index:  python3 ingest/build_index.py --prefer onnx")
+    print("\nDone. Now rebuild the index:  python3 ingest/build_index.py")
     return 0
 
 
