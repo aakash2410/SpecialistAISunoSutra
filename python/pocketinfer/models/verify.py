@@ -63,6 +63,7 @@ class Verifier:
         with open(os.path.join(found, "config.json"), encoding="utf-8") as f:
             labels = json.load(f)["id2label"]
         self._entailment = next(int(i) for i, name in labels.items() if name.lower() == "entailment")
+        self._contradiction = next(int(i) for i, name in labels.items() if name.lower() == "contradiction")
         self._tokenizer = Tokenizer.from_file(os.path.join(found, "tokenizer.json"))
         self._tokenizer.enable_truncation(max_length=512)
         self._tokenizer.no_padding()
@@ -73,14 +74,22 @@ class Verifier:
         self._inputs = {i.name for i in self._session.get_inputs()}
         logger.info("Verifier: using %s", found)
 
-    def support_score(self, premise: str, sentence: str) -> float:
-        """Probability that ``premise`` entails ``sentence``."""
+    def _logits(self, premise: str, sentence: str) -> np.ndarray:
         enc = self._tokenizer.encode(premise, sentence)
         feeds = {"input_ids": np.array([enc.ids], dtype=np.int64),
                  "attention_mask": np.array([enc.attention_mask], dtype=np.int64)}
         if "token_type_ids" in self._inputs:
             feeds["token_type_ids"] = np.array([enc.type_ids], dtype=np.int64)
-        logits = self._session.run(None, feeds)[0][0]
+        return self._session.run(None, feeds)[0][0]
+
+    def entailment_margin(self, premise: str, sentence: str) -> float:
+        """How much more the model favours entailment than contradiction, in logits."""
+        logits = self._logits(premise, sentence)
+        return float(logits[self._entailment] - logits[self._contradiction])
+
+    def support_score(self, premise: str, sentence: str) -> float:
+        """Probability that ``premise`` entails ``sentence``."""
+        logits = self._logits(premise, sentence)
         probs = np.exp(logits - logits.max())
         return float((probs / probs.sum())[self._entailment])
 

@@ -215,8 +215,12 @@ def _first(v, default=None):
 
 def harvest_online(board: Optional[str], grade: str, subject: Optional[str], medium: str = "English",
                    limit: int = 200, max_docs: int = 100000, min_chars: int = 120,
-                   ocr: bool = False, page_size: int = 100) -> List[dict]:
+                   ocr: bool = False, page_size: int = 100,
+                   progress_path: Optional[str] = None) -> List[dict]:
     """Search DIKSHA, download PDFs, and extract text into chapters.json docs.
+
+    With ``progress_path``, every finished book is appended there straight away, so a
+    stopped harvest loses at most one book and resumes where it left off.
 
     ``subject``/``board`` are optional — omit them (empty/None) to pull ALL
     subjects / boards for the grade+medium. ``limit`` caps how many content items
@@ -237,6 +241,18 @@ def harvest_online(board: Optional[str], grade: str, subject: Optional[str], med
     scanned_skipped = 0
     scanned = 0
     dropped: collections.Counter = collections.Counter()
+    finished: set = set()
+    if progress_path and os.path.exists(progress_path):
+        with open(progress_path, "r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    book = json.loads(line)
+                except ValueError:      # a line cut short by the crash being resumed from
+                    continue
+                finished.add(book["content_id"])
+                docs.extend(book["pages"])
+        logger.info("Resuming: %d books and %d pages already done", len(finished), len(docs))
+    progress = open(progress_path, "a", encoding="utf-8") if progress_path else None
 
     while len(seen) < limit and len(docs) < max_docs:
         want = min(page_size, limit - len(seen))
@@ -250,7 +266,7 @@ def harvest_online(board: Optional[str], grade: str, subject: Optional[str], med
             if not cid or cid in seen:
                 continue
             seen.add(cid)
-            if not url.lower().endswith(".pdf"):
+            if cid in finished or not url.lower().endswith(".pdf"):
                 continue
             try:
                 pages = _extract_pages(_download(url), ocr=ocr)
@@ -259,6 +275,7 @@ def harvest_online(board: Optional[str], grade: str, subject: Optional[str], med
                 continue
 
             kept = 0
+            first_kept = len(docs)
             for pnum, text in pages:
                 if len(text) < min_chars:
                     continue
@@ -288,6 +305,10 @@ def harvest_online(board: Optional[str], grade: str, subject: Optional[str], med
             else:
                 scanned += 1
             logger.info("  %s -> %d text pages  (%s)", cid, kept, (c.get("name") or "")[:40])
+            if progress:
+                progress.write(json.dumps({"content_id": cid, "pages": docs[first_kept:]},
+                                          ensure_ascii=False) + "\n")
+                progress.flush()
             if len(docs) >= max_docs:
                 break
             time.sleep(0.2)  # be polite
@@ -296,6 +317,8 @@ def harvest_online(board: Optional[str], grade: str, subject: Optional[str], med
         if offset >= count:
             break
 
+    if progress:
+        progress.close()
     logger.info("Harvested %d text pages from %d content items (%d yielded text, %d had no text layer%s)",
                 len(docs), len(seen), scanned, scanned_skipped,
                 " — pass --ocr to recover scans" if scanned_skipped and not ocr else "")
@@ -331,6 +354,8 @@ def main():
     ap.add_argument("--limit", type=int, default=6000, help="max content items to scan")
     ap.add_argument("--max-docs", type=int, default=100000, help="max text pages to output")
     ap.add_argument("--min-chars", type=int, default=120, help="drop pages shorter than this")
+    ap.add_argument("--progress", default=None,
+                    help="save each finished book here, so a stopped harvest can resume")
     ap.add_argument("--ocr", action="store_true",
                     help="OCR scanned pages and pages with a junk text layer (needs Tesseract)")
     args = ap.parse_args()
@@ -354,7 +379,7 @@ def main():
         docs = load_local(os.path.abspath(raw))
     else:
         docs = harvest_online(args.board or None, args.grade, args.subject, medium=args.medium,
-                              limit=args.limit, max_docs=args.max_docs,
+                              limit=args.limit, max_docs=args.max_docs, progress_path=args.progress,
                               min_chars=args.min_chars, ocr=args.ocr)
 
     payload = {

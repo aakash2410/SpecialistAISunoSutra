@@ -36,6 +36,7 @@ from .grounding import (
     is_refusal_response,
     iter_sentences,
 )
+from .safety import SafetyCheck
 from .vector_index import Retrieved, VectorIndex
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,7 @@ class SpecialistEngine:
     ):
         self.index = VectorIndex(index_dir)
         self.verifier = verifier or Verifier()
+        self.safety = SafetyCheck(self.verifier)
         self.embedder = embedder or Embed(model_name=self.index.embedder_name or DEFAULT_MODEL_NAME)
         self._check_embedder_matches_index()
         self.llm = llm or extractive_llm  # extractive fallback keeps it offline+runnable
@@ -169,6 +171,13 @@ class SpecialistEngine:
             loc = _localize(REFUSAL_TEXT)
             return SentenceResult(0, REFUSAL_TEXT, loc, _audio(loc), refused=True, reason=reason)
 
+        flag = self.safety.check(request)
+        if flag:
+            loc = self._localize_flag(flag, target_language)
+            yield SentenceResult(0, flag.response_en, loc, _audio(loc), refused=True,
+                                 reason=f"safety: {flag.category} ({flag.source})")
+            return
+
         g = self.prepare(request)
         if g.refused:
             yield _refusal(g.reason)
@@ -204,10 +213,38 @@ class SpecialistEngine:
         if idx == 0:
             yield _refusal(_UNSUPPORTED_REASON)
 
+    def _localize_flag(self, flag, target_language: str) -> str:
+        """Use the human-written text where there is one; translate only as a fallback."""
+        lang = (target_language or "en").lower()
+        if lang == "en":
+            return flag.response_en
+        if lang == "hi":
+            return flag.response_hi
+        if self.mt:
+            try:
+                return self.mt(flag.response_en, "EN", target_language)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("MT failed on a safety response (%s)", e)
+        return flag.response_en
+
     def answer(self, request: str, target_language: str = "en") -> AnswerResult:
         t = {}
         t0 = time.time()
 
+        flag = self.safety.check(request)
+        t["safety"] = time.time() - t0
+        if flag:
+            result = AnswerResult(
+                refused=True, intent="safety", request=request, target_language=target_language,
+                answer_en=flag.response_en,
+                answer_localized=self._localize_flag(flag, target_language),
+                reason=f"safety: {flag.category} ({flag.source})", timings=t,
+            )
+            self._maybe_tts(result)
+            t["total"] = time.time() - t0
+            return result
+
+        t0 = time.time()
         qvec = self.embedder.embed_one(request, kind="query")
         t["embed"] = time.time() - t0
 

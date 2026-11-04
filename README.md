@@ -23,11 +23,12 @@ We moved off Llama because Mozilla's Human-Scale AI call excludes projects whose
 
 1. **Request:** the teacher speaks, shows a page or types.
 2. **Translate:** the request becomes English if it is in another language.
-3. **Retrieve:** e5 embeds the request and searches the local DIKSHA index.
-4. **Gate:** the device refuses unless a passage both scores above the threshold (0.80) and shares a key term with the request. Only those passages reach the model and the citations.
-5. **Answer:** Qwen rephrases the retrieved passages in English.
-6. **Check:** each sentence must be supported by a passage. Unsupported sentences get dropped, and the device refuses if none survive.
-7. **Respond:** the kept sentences get translated, spoken aloud and cited. Only the passages that support them are cited.
+3. **Safety check:** patterns and the NLI model look for violence, self-harm, abuse, adult content, hate and medical questions. A flagged request gets a fixed, human-written response and never reaches the answer model.
+4. **Retrieve:** e5 embeds the request and searches the local DIKSHA index.
+5. **Gate:** the device refuses unless a passage both scores above the threshold (0.80) and shares a key term with the request. Only those passages reach the model and the citations.
+6. **Answer:** Qwen rephrases the retrieved passages in English.
+7. **Check:** each sentence must be supported by a passage. Unsupported sentences get dropped, and the device refuses if none survive.
+8. **Respond:** the kept sentences get translated, spoken aloud and cited. Only the passages that support them are cited.
 
 Knowledge lives in the index, not the model, so new content needs no retraining. No step needs the internet at run time by design, but we have not yet tested this with the network off.
 
@@ -62,6 +63,8 @@ The gate still lets through off-topic questions that share a word with the corpu
 
 **Jetson memory, out of 7.4 GB with the desktop on.** With translation on the GPU, Bhashini holds about 1.5 GB of process memory, down from 4.4 GB originally, and free memory stayed above 2 GB through the Hindi loop with Qwen fully on the GPU. Whisper was left out when Bhashini was larger, because it pushed Qwen 31% onto the CPU, and it has not been retested since this change.
 
+**Safety check, on 79 questions written after the design was frozen.** It caught 33 of 39 unsafe questions and wrongly blocked 4 of 40 safe ones, mostly history questions about conflict or caste. The 6 misses were then patched, so they no longer count as unseen. The wording of the responses is a draft, and it needs review by someone with safeguarding experience before classroom use.
+
 **Answer check comparison, using 55 hand-labelled cases with real retrieval and real Qwen answers.**
 
 | Setup | Covered questions answered | False answers let through |
@@ -93,7 +96,7 @@ These cases were labelled by hand and the check was tuned on the same set, so th
 
 The main failure is answering from memory when an on-topic passage lacks the answer. The retrieval gate cannot catch this, and it is the behaviour the fine-tune targets. The answer check now stops most of these cases on the device.
 
-**Corpus.** The device holds a 10-passage starter set. We have 5,000 harvested pages from 232 books that are not indexed yet, and about 36% of the CC BY pages look garbled. DIKSHA lists 5,101 Class 7 English PDFs.
+**Corpus.** The Jetson now answers from the full Class 7 English-medium corpus: 9,619 passages from 3,454 pages across 210 books and all subjects. A spot check of 16 questions refused all 5 off-topic ones, but some sources are noisy scanned text or teacher manuals, and some answers still contain errors the answer check missed, such as conduction described with the direction of heat flow wrong.
 
 ## Next steps
 

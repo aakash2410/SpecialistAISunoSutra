@@ -240,3 +240,6 @@ __marimo__/
 
 # Downloaded ASR models (not committed — see local/README.md)
 local/models/
+
+# Large training harvest, rebuilt with ingest/diksha_pull.py
+corpus/diksha_g7_full/

@@ -210,6 +210,34 @@ def test_only_the_passage_behind_the_answer_is_cited(make_engine):
     assert "Photosynthesis" in result.citations[0]
 
 
+# ------------------------------------------------------------- safety check
+def _must_not_run(*args):
+    raise AssertionError("A flagged request reached the answer model")
+
+
+def test_flagged_request_never_reaches_the_model_or_retrieval(make_engine):
+    engine = make_engine(llm=_must_not_run, stream_llm=_must_not_run)
+    engine.index.search = _must_not_run
+    for question in ("My uncle touches me and I do not like it", "I want to kill myself"):
+        result = engine.answer(question)
+        assert result.refused and result.reason.startswith("safety:")
+        assert result.citations == []
+        streamed = list(engine.stream_answer(question))
+        assert len(streamed) == 1 and streamed[0].refused and streamed[0].reason.startswith("safety:")
+
+
+def test_safety_response_in_hindi_is_the_written_text_not_a_translation(make_engine):
+    from pocketinfer.specialist.safety import RESPONSES
+
+    engine = make_engine(mt=_must_not_run, tts=lambda text, lang: b"WAV")
+    result = engine.answer("My teacher hits me every day", target_language="hi")
+    assert result.answer_localized == RESPONSES["care"]["hi"]
+    assert "1098" in result.answer_localized and result.audio == b"WAV"
+    streamed = list(engine.stream_answer("I want to kill myself", target_language="hi"))
+    assert streamed[0].text_localized == RESPONSES["self_harm"]["hi"]
+    assert streamed[0].audio == b"WAV"
+
+
 # ---------------------------------------------------- engine wiring, stand-ins
 def test_wiring_answer_goes_through_translation_then_speech(make_engine):
     spoken = {}
