@@ -1,5 +1,6 @@
 #!/bin/sh
 # Managed by the Specialist Ansible role. Runs the full voice loop.
+#   specialist-voice --no-speak --text "What is photosynthesis?"
 #   specialist-voice --in-lang hi --out-lang hi --from-wav question.wav
 #   specialist-voice --in-lang hi --out-lang hi --from-image page.jpg
 #   specialist-voice --in-lang hi --out-lang hi
@@ -7,4 +8,4 @@ set -a
 . /etc/default/specialist
 set +a
 cd {{ specialist_root }}/app || exit 1
-exec {{ specialist_venv }}/bin/python -W ignore -m local.voice_loop --ollama-model {{ specialist_llm_model }} --tts {{ specialist_tts }} "$@"
+exec {{ specialist_venv }}/bin/python -W ignore -m local.voice_loop --ollama-model {{ specialist_llm_model }} "$@"

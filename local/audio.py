@@ -1,6 +1,6 @@
 """Audio capture and playback for the voice loop.
 
-Implements the ``MicSource`` contract two ways: an ALSA microphone and a WAV file
+Two ways to get a spoken request: an ALSA microphone and a WAV file
 (for testing without hardware). Both return an ``AudioClip`` at 16 kHz mono 16-bit,
 which Whisper and Bhashini both accept.
 """

@@ -5,7 +5,9 @@ Wants=ollama.service bhashini_models.service
 
 [Service]
 Type=oneshot
+ExecStartPre=+/usr/local/bin/specialist-usb-power
 ExecStart=/usr/local/bin/specialist-boot-check
+ExecStartPost=+/usr/local/bin/specialist-usb-power
 RemainAfterExit=yes
 User={{ specialist_user }}
 TimeoutStartSec=420

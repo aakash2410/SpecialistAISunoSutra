@@ -1,0 +1,12 @@
+#!/bin/sh
+# Managed by the Specialist Ansible role. Keeps the camera out of USB power saving, which
+# made it drop off the bus. The udev rule alone does not hold through boot, so the boot
+# check runs this as well. The first line also covers the camera after a replug.
+echo -1 > /sys/module/usbcore/parameters/autosuspend
+for d in /sys/bus/usb/devices/*; do
+    if [ "$(cat "$d/idVendor" 2>/dev/null)" = "{{ specialist_camera_vendor }}" ] && [ "$(cat "$d/idProduct" 2>/dev/null)" = "{{ specialist_camera_product }}" ]; then
+        echo on > "$d/power/control"
+        echo "camera power: $(cat "$d/power/control"), $(cat "$d/power/runtime_status")"
+    fi
+done
+exit 0

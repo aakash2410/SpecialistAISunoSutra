@@ -68,13 +68,11 @@ class _OnnxE5:
         self.tokenizer = Tokenizer.from_file(os.path.join(model_dir, "tokenizer.json"))
         self.tokenizer.enable_truncation(max_length=512)
         self.tokenizer.enable_padding()
-        avail = ort.get_available_providers()
-        providers = [p for p in ("CUDAExecutionProvider", "CPUExecutionProvider") if p in avail]
         # Quiet onnxruntime's info/warning chatter (e.g. the harmless Jetson
         # "GPU device discovery failed /sys/class/drm" line).
         so = ort.SessionOptions()
         so.log_severity_level = 3  # 3 = error and above only
-        self.session = ort.InferenceSession(onnx_path, sess_options=so, providers=providers or None)
+        self.session = ort.InferenceSession(onnx_path, sess_options=so, providers=["CPUExecutionProvider"])
         self.input_names = {i.name for i in self.session.get_inputs()}
         last_dim = self.session.get_outputs()[0].shape[-1]
         self.dim = last_dim if isinstance(last_dim, int) else 384  # e5-small hidden size

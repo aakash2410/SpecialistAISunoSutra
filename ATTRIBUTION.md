@@ -17,10 +17,6 @@ These are not stored here. `tools/fetch_assets.py` downloads the first group fro
 - Flite speech engine and voices (festvox)
 - Qwen2.5-1.5B (Apache-2.0), Whisper `tiny.en` (MIT), `multilingual-e5-small`, `nli-deberta-v3-small` (Apache-2.0)
 
-## Speech output
-
-Kokoro-82M (Apache-2.0, hexgrad) speaks the answers, using ONNX files from `thewh1teagle/kokoro-onnx` (MIT). The role downloads them at install time. Turning text into phonemes uses `phonemizer` and `espeak-ng`, which are GPL-3.0.
-
 ## Hindi speech vocabulary
 
 The Ansible role restores the full 128-token list for Bhashini's Hindi speech model, because the bundled code lists only 88. The list comes from `hi-conformer.nemo` in [AI4Bharat/transactional-voice-ai](https://github.com/AI4Bharat/transactional-voice-ai), which shows no licence.

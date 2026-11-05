@@ -18,25 +18,13 @@ specialist_llm_model: qwen2.5:1.5b
 # English speech input. Hindi goes through Bhashini.
 specialist_whisper_model: tiny.en
 
-# How to install Ollama if it is missing: "script" uses ollama.com/install.sh, and
-# "docker" copies it out of the official image. Use "docker" where GitHub downloads
-# are slow, because the install script cannot resume.
-specialist_ollama_source: script
-
 # Tesseract language packs for reading textbook pages.
-specialist_ocr_packs: [hin, tam, tel, mar, guj, ben, pan, kan]
+specialist_ocr_packs: [hin]
 
 # Package index for the Jetson builds of Bhashini's Python packages.
 specialist_torch_index: https://pypi.jetson-ai-lab.io/jp6/cu126
 # Package index for the CPU build of PyTorch, which Bhashini uses for speech input.
 specialist_torch_cpu_index: https://download.pytorch.org/whl/cpu
-
-# Speech output: kokoro or bhashini (Flite). Flite stays the default until Kokoro's
-# speed has been measured on the Jetson.
-specialist_tts: bhashini
-specialist_voice_en: af_heart
-specialist_voice_hi: hf_alpha
-specialist_kokoro_url: https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0
 
 # Hardware used by the voice loop. Change these when the microphone or speaker changes.
 # ALSA card names stay the same across reboots, unlike card numbers.

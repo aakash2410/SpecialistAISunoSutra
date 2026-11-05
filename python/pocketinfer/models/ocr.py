@@ -9,16 +9,12 @@ to disk and nothing leaves the device.
 from __future__ import annotations
 
 import logging
-import shutil
 import subprocess
 
 logger = logging.getLogger(__name__)
 
 # Language codes used across the Specialist -> Tesseract language packs.
-TESSERACT_LANG = {
-    "en": "eng", "hi": "hin", "ta": "tam", "te": "tel", "mr": "mar",
-    "gu": "guj", "bn": "ben", "pa": "pan", "kn": "kan",
-}
+TESSERACT_LANG = {"en": "eng", "hi": "hin"}
 
 
 class Ocr:
@@ -39,13 +35,3 @@ class Ocr:
         if result.returncode != 0:
             raise RuntimeError(f"OCR failed: {result.stderr.decode(errors='replace')[:200]}")
         return {"text": result.stdout.decode("utf-8", errors="replace").strip()}
-
-    @classmethod
-    def verify(cls, args):
-        if shutil.which("tesseract"):
-            return True, "Tesseract is available."
-        return False, "Tesseract is not installed."
-
-    @classmethod
-    def update(cls, args):
-        return True, "OK"

@@ -7,8 +7,7 @@ This role installs the full software pipeline on a Jetson running JetPack 6. It 
 | Part | Where |
 |---|---|
 | Answer model, Qwen2.5-1.5B | Ollama |
-| Hindi speech input, translation to and from English | Bhashini service on `127.0.0.1:11400`, in `/opt/specialist/bhashini_models` |
-| Speech output in American English and Hindi, Kokoro | `/opt/specialist/models/kokoro` |
+| Hindi speech input, translation to and from English, speech output | Bhashini service on `127.0.0.1:11400`, in `/opt/specialist/bhashini_models` |
 | English speech input, Whisper `tiny.en` | `/opt/specialist/models/whisper` |
 | Retrieval, `multilingual-e5-small` | `/opt/specialist/models` |
 | Answer verifier, `nli-deberta-v3-small` | `/opt/specialist/models` |
@@ -16,7 +15,7 @@ This role installs the full software pipeline on a Jetson running JetPack 6. It 
 | Reading pages, Tesseract | System package |
 | DIKSHA index | `/opt/specialist/corpus` |
 | Pipeline code and Python environment | `/opt/specialist/app`, `/opt/specialist/venv` |
-| Commands to run it | `/usr/local/bin/specialist`, `/usr/local/bin/specialist-voice` |
+| Command to run it | `/usr/local/bin/specialist-voice` |
 
 ## Install
 
@@ -46,10 +45,7 @@ Change these in the inventory or with `-e`. The full list is in `ansible/roles/s
 |---|---|
 | `specialist_llm_model` | Swap the answer model, for example to the fine-tuned model once it exists |
 | `specialist_ocr_packs` | Choose the languages for reading pages |
-| `specialist_tts` | Choose the speech engine, `kokoro` or `bhashini` |
-| `specialist_voice_en`, `specialist_voice_hi` | Choose the voices |
 | `specialist_mic_device`, `specialist_speaker_device` | Choose the microphone and speaker |
-| `specialist_ollama_source` | Install Ollama from `docker` where GitHub downloads are slow |
 | `specialist_assets_dir` | Reuse files you have already downloaded |
 
 To update only the syllabus:
@@ -61,11 +57,11 @@ ansible-playbook -i inventory.ini install_specialist.yml -K --tags content
 ## Run it
 
 ```bash
-specialist "What is photosynthesis?"
+specialist-voice --no-speak --text "What is photosynthesis?"
 ```
 
 ```bash
-specialist --out-lang hi "What is photosynthesis?"
+specialist-voice --no-speak --out-lang hi --text "What is photosynthesis?"
 ```
 
 For the full voice loop, give it a WAV file, a page image or a USB microphone:
@@ -117,7 +113,7 @@ sudo systemctl disable --now bhashini_models
 ```
 
 ```bash
-sudo rm -rf /opt/specialist /usr/local/bin/specialist /usr/local/bin/specialist-voice /etc/systemd/system/bhashini_models.service
+sudo rm -rf /opt/specialist /usr/local/bin/specialist-voice /etc/systemd/system/bhashini_models.service
 ```
 
 Ollama and the system packages stay installed.

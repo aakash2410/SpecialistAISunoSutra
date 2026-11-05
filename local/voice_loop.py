@@ -9,7 +9,7 @@ Give it a request in any of these ways:
   * a USB mic:       python -m local.voice_loop --mic-device plughw:1,0
 
 Swap any component by name (contracts live in pocketinfer.specialist.providers):
-  --asr auto|whisper|bhashini   --mt bhashini|none   --tts kokoro|bhashini   --llm ollama|extractive
+  --asr auto|whisper|bhashini   --mt bhashini|none   --tts bhashini   --llm ollama|extractive
 """
 
 from __future__ import annotations
@@ -88,7 +88,6 @@ class LoopHarness:
         print(
             f"[providers] asr={getattr(self.asr,'name','(none)')}  mt={self.mt.name}  "
             f"tts={getattr(self.tts_provider,'name','(off)')}  llm={args.llm}  "
-            f"stream={'on' if args.stream else 'off'}  "
             f"in={self.in_lang} out={self.out_lang}"
         )
         if self.in_lang != "en" and self.mt.name == "none":
@@ -123,42 +122,6 @@ class LoopHarness:
 
     def run_once(self, mic) -> bool:
         from local.audio import play_wav_bytes
-
-        T = {}
-        t0 = time.time()
-        ts = time.time()
-        raw = self._capture_text(mic)
-        T["capture"] = time.time() - ts
-        if not raw:
-            print("[skip] nothing heard.")
-            return False
-        query_en = self._translate_query(raw, T)
-
-        # The engine does embed -> retrieve -> ground -> LLM -> MT -> TTS-synth.
-        ts = time.time()
-        result = self.engine.answer(query_en, target_language=self.out_lang)
-        T["specialist"] = time.time() - ts
-        if result.refused:
-            print(f"[3 SPEC] REFUSED — {result.reason}")
-        else:
-            print(f"[3 SPEC] ({result.intent}) -> {result.answer_en}")
-            for c in result.citations:
-                print(f"          · {c}")
-            if self.out_lang != "en":
-                print(f"[4 MT  ] en->{self.out_lang} -> {result.answer_localized!r}")
-
-        if result.audio and self.tts_provider:
-            ts = time.time()
-            play_wav_bytes(result.audio)
-            T["playback"] = time.time() - ts
-
-        T["TOTAL"] = time.time() - t0
-        print(f"[time ] core: {_fmt_timings(result.timings)}")
-        print(f"[time ] end-to-end: {_fmt_timings(T)}")
-        return True
-
-    def run_once_stream(self, mic) -> bool:
-        from local.audio import play_wav_bytes
         from pocketinfer.specialist import speak_stream
 
         T = {}
@@ -174,6 +137,8 @@ class LoopHarness:
         header = {"printed": False}
 
         def on_sentence(sr):
+            if sr.timings:
+                print(f"[steps] {_fmt_timings(sr.timings)}")
             if sr.refused:
                 print(f"[3 SPEC] REFUSED — {sr.reason}")
                 return
@@ -199,7 +164,7 @@ class LoopHarness:
         return True
 
     def run(self):
-        once = self.run_once_stream if self.args.stream else self.run_once
+        once = self.run_once
         # Single-shot input modes.
         if self.args.text or self.args.from_image:
             once(None)
@@ -233,11 +198,8 @@ def main():
     # providers (swappable)
     ap.add_argument("--asr", default="auto", help="auto|whisper|bhashini")
     ap.add_argument("--mt", default="bhashini", help="bhashini|none")
-    ap.add_argument("--tts", default="bhashini", help="kokoro|bhashini")
+    ap.add_argument("--tts", default="bhashini", help="bhashini")
     ap.add_argument("--llm", default="ollama", help="ollama|extractive")
-    ap.add_argument("--stream", action="store_true",
-                    help="stream the answer sentence-by-sentence: speak sentence N while "
-                         "N+1 is still being generated/translated (cuts time-to-first-audio)")
     ap.add_argument("--no-speak", action="store_true", help="don't play TTS (print only)")
     # languages
     ap.add_argument("--in-lang", default="en")

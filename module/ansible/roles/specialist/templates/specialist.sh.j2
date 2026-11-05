@@ -1,5 +1,0 @@
-#!/bin/sh
-# Managed by the Specialist Ansible role. Runs the pipeline with typed input.
-#   specialist "What is photosynthesis?"
-#   specialist --out-lang hi --speak "What is photosynthesis?"
-exec {{ specialist_venv }}/bin/python -W ignore {{ specialist_root }}/app/run_specialist.py --model {{ specialist_llm_model }} "$@"

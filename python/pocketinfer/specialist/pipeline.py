@@ -1,6 +1,6 @@
 """The offline answer loop, as a board-agnostic engine.
 
-This is the core shared by run_specialist.py and the voice loop. Input *capture*
+This is the core behind the voice loop. Input *capture*
 (ASR / OCR) and output *playback* live in those callers; everything between,
 embed -> retrieve -> ground -> LLM -> MT, lives here.
 
@@ -84,6 +84,7 @@ class SentenceResult:
     refused: bool = False
     citations: List[str] = field(default_factory=list)   # sources not yet cited in this answer
     reason: str = ""
+    timings: dict = field(default_factory=dict)          # each step, on the first sentence only
 
     @property
     def spoken_text(self) -> str:
@@ -168,18 +169,33 @@ class SpecialistEngine:
                     logger.warning("stream TTS failed (%s)", e)
             return None
 
+        steps = {}
+        clock = [time.time()]
+
+        def _mark(step: str):
+            now = time.time()
+            steps[step] = steps.get(step, 0.0) + now - clock[0]
+            clock[0] = now
+
         def _refusal(reason: str) -> SentenceResult:
             loc = _localize(REFUSAL_TEXT)
-            return SentenceResult(0, REFUSAL_TEXT, loc, _audio(loc), refused=True, reason=reason)
+            _mark("mt")
+            audio = _audio(loc)
+            _mark("tts")
+            return SentenceResult(0, REFUSAL_TEXT, loc, audio, refused=True, reason=reason, timings=steps)
 
         flag = self.safety.check(request)
+        _mark("safety")
         if flag:
             loc = self._localize_flag(flag, target_language)
-            yield SentenceResult(0, flag.response_en, loc, _audio(loc), refused=True,
-                                 reason=f"safety: {flag.category} ({flag.source})")
+            audio = _audio(loc)
+            _mark("tts")
+            yield SentenceResult(0, flag.response_en, loc, audio, refused=True,
+                                 reason=f"safety: {flag.category} ({flag.source})", timings=steps)
             return
 
         g = self.prepare(request)
+        _mark("retrieve")
         if g.refused:
             yield _refusal(g.reason)
             return
@@ -192,6 +208,7 @@ class SpecialistEngine:
         idx = 0
         cited = set()
         for i, sentence in enumerate(iter_sentences(chunks)):
+            _mark("llm")
             if i == 0 and is_refusal_response(sentence):
                 yield _refusal("LLM reported no answer in source")
                 return
@@ -199,6 +216,7 @@ class SpecialistEngine:
             if not text:
                 continue
             source = self.verifier.supporting_passage(text, g.passages)
+            _mark("check")
             if source is None:
                 logger.info("Dropped an unsupported sentence: %s", text)
                 continue
@@ -206,10 +224,14 @@ class SpecialistEngine:
             new_citations = [] if citation in cited else [citation]
             cited.add(citation)
             loc = _localize(text)
+            _mark("mt")
+            audio = _audio(loc)
+            _mark("tts")
             yield SentenceResult(
-                index=idx, text_en=text, text_localized=loc, audio=_audio(loc),
-                citations=new_citations,
+                index=idx, text_en=text, text_localized=loc, audio=audio,
+                citations=new_citations, timings=dict(steps) if idx == 0 else {},
             )
+            clock[0] = time.time()
             idx += 1
         if idx == 0:
             yield _refusal(_UNSUPPORTED_REASON)

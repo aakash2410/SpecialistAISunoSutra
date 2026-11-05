@@ -37,7 +37,7 @@ Three limits apply to these numbers:
 | Stop wrong answers to off-topic questions | The device said Edison invented the telephone and gave a maths exercise as the price of gold | Open |
 | Fine-tune Qwen to refuse when a passage lacks the answer | Answering from memory is the main remaining failure, and some answers still contain errors | Not started |
 | Finalise the microphone, the camera, a button and the case | The Arducam reads pages and its mic works in early tests, but it dropped off USB until USB power saving was turned off, which does not yet survive a reboot | In progress |
-| Make the chosen Kokoro voices fast enough | We chose Kokoro for American English and Hindi, because Flite sounds robotic. On the Jetson's CPU it takes 8 to 18 s per sentence, so Flite stays the default while we test the GPU | In progress |
+| Make the Flite voice less robotic | Flite meets the speed target, with the first Hindi sentence ready in 1.38 to 2.39 s once warm, but it sounds nasal | In progress |
 | Mozilla Human-Scale AI application | Deadline is 20 November 2026. We need to ask at the 12 November info session whether a small Qwen qualifies | Question still open |
 
 A larger DIKSHA pull stopped at 3,332 of 5,101 books and is not in use. Detailed results are under [Results so far](#results-so-far).
@@ -52,8 +52,9 @@ A larger DIKSHA pull stopped at 3,332 of 5,101 books and is not in use. Detailed
 | Retrieval | `multilingual-e5-small` on ONNX, replacing TF-IDF | Running on the Jetson |
 | Answer check | `nli-deberta-v3-small` on ONNX (Apache-2.0), tested against `open-jev` and chosen | Running on the Jetson |
 | Safety check | Patterns, then a rule that lets general knowledge questions through, then `nli-deberta-v3-small` fine-tuned for this job, as a second model beside the answer check | Running on the Jetson |
-| Hindi speech input, translation through English, spoken output | Bhashini, without Tamil speech input or Indic-to-Indic translation, to save memory, and with the Hindi speech vocabulary restored to all 128 tokens | Running on the Jetson, with translation on the GPU |
+| Hindi speech input, translation through English | Bhashini, without Tamil speech input or Indic-to-Indic translation, to save memory, and with the Hindi speech vocabulary restored to all 128 tokens | Running on the Jetson, with translation on the GPU |
 | English speech input | Whisper `tiny.en` on the CPU, because Bhashini's speech model only covers Hindi and `small.en` did not fit in memory. It loads only for English speech | Running on the Jetson |
+| Spoken output | Flite through Bhashini, chosen for speed. Kokoro-82M sounded better, but its first Hindi sentence took 2.04 to 3.57 s against 1.38 to 2.39 s, so we removed it | Running on the Jetson |
 | Reading textbook pages | Tesseract, because the bundled Bhashini service has no OCR | Installed |
 
 We moved off Llama because Mozilla's Human-Scale AI call excludes projects whose core depends on a slimmed-down frontier model, and it names Llama 1B and 3B as examples. Whether a small Qwen also counts is still an open question for Mozilla.
@@ -182,7 +183,7 @@ The upstream kit code for the microphone, camera and other hardware is no longer
 After the install, on the Jetson:
 
 ```bash
-specialist "What is photosynthesis?"
+specialist-voice --no-speak --text "What is photosynthesis?"
 ```
 
 ```bash
@@ -196,7 +197,6 @@ Install steps are in [module/README.md](module/README.md).
 | Folder | Purpose |
 |---|---|
 | `python/pocketinfer/` | Retrieval, grounding, answer check, answer engine, model wrappers |
-| `run_specialist.py` | Typed questions in, grounded answers out |
 | `local/` | The full voice loop, from a WAV file, page image or microphone |
 | `corpus/`, `ingest/` | DIKSHA content and the pipeline that builds the index |
 | `module/`, `scripts/`, `tools/` | Device install, packaging, model downloads |

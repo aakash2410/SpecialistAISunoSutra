@@ -304,24 +304,14 @@ def test_hindi_maths_terms_reach_translation_in_english(monkeypatch):
     assert sent[-1] == "fraction क्या होता है?"
     mt.translate("दो भिन्न प्रकार के पौधे कौन से हैं?", "HI", "EN")
     assert sent[-1] == "दो भिन्न प्रकार के पौधे कौन से हैं?"
+    mt.translate("क्या कास्ट सिस्टम अच्छा होता है?", "HI", "EN")
+    assert sent[-1] == "क्या caste system अच्छा होता है?"
     mt.translate("चालन क्या है?", "HI", "EN")
     assert sent[-1] == "conduction क्या है?"
     mt.translate("वाहन चालन का लाइसेंस कैसे मिलता है?", "HI", "EN")
     assert sent[-1] == "वाहन चालन का लाइसेंस कैसे मिलता है?"
     assert mt.translate("भिन्न", "EN", "HI") == "What is different?"
     assert sent[-1] == "भिन्न"
-
-
-@pytest.mark.parametrize("language,text", [("en", "A fraction is a part of a whole."),
-                                           ("hi", "भिन्न एक संख्या है। इसका एक हिस्सा होता है।")])
-def test_kokoro_speaks_both_languages(kokoro_ready, language, text):
-    import io
-    import wave
-
-    from pocketinfer.models.kokoro import Kokoro
-
-    with wave.open(io.BytesIO(Kokoro().synthesize(text, language))) as w:
-        assert w.getnframes() / w.getframerate() > 1
 
 
 def test_shipped_index_is_consistent_and_built_with_e5(shipped_index_dir):
@@ -356,11 +346,6 @@ def test_voice_loop_command_transcribes_english_speech(shipped_index_dir, whispe
         "--llm", "extractive", "--mt", "none", "--no-speak")
     prints_grounded_answer(result)
     assert "photosynthesis" in result.stdout.split("[3 SPEC]")[0].lower()
-
-
-def test_run_specialist_command_uses_the_real_model(shipped_index_dir, ollama_ready):
-    prints_grounded_answer(run_command("run_specialist.py", "--model", ollama_ready,
-                                       "What is photosynthesis?"))
 
 
 # ------------------------------------------------------------- live Bhashini

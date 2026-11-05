@@ -5,7 +5,7 @@ they are interchangeable. Pick them by name on the command line:
 
     --asr auto|bhashini|whisper    (auto: Whisper for English, Bhashini for Hindi)
     --mt  bhashini|none
-    --tts kokoro|bhashini
+    --tts bhashini
     --llm ollama|extractive
 """
 
@@ -117,23 +117,6 @@ class BhashiniTTS:
         play_wav_bytes(self.synthesize(text, language))
 
 
-class KokoroTTS:
-    name = "kokoro"
-
-    def __init__(self):
-        from pocketinfer.models.kokoro import Kokoro
-
-        self._kokoro = Kokoro()
-
-    def synthesize(self, text: str, language: str = "en"):
-        return self._kokoro.synthesize(text, language.lower())
-
-    def speak(self, text: str, language: str = "en") -> None:
-        from local.audio import play_wav_bytes
-
-        play_wav_bytes(self.synthesize(text, language))
-
-
 # --------------------------------------------------------------------------- LLM
 def make_llm(name: str, ollama_model: str = "qwen2.5:1.5b"):
     if name == "extractive":
@@ -148,7 +131,7 @@ def make_llm(name: str, ollama_model: str = "qwen2.5:1.5b"):
 # ------------------------------------------------------------------- factories
 ASR_PROVIDERS = {"bhashini": BhashiniASR, "whisper": WhisperASR}
 MT_PROVIDERS = {"none": NoopMT, "bhashini": BhashiniMT}
-TTS_PROVIDERS = {"bhashini": BhashiniTTS, "kokoro": KokoroTTS}
+TTS_PROVIDERS = {"bhashini": BhashiniTTS}
 
 
 def make_asr(name: str, whisper_model: str = "tiny.en"):

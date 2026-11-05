@@ -14,7 +14,3 @@ tokenizers
 
 # English speech input: tiny Whisper, on the CPU.
 faster-whisper
-
-# Speech output: text to phonemes for Kokoro, which runs on onnxruntime above.
-phonemizer
-espeakng-loader

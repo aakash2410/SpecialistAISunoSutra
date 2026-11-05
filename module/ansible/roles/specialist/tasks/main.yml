@@ -91,21 +91,7 @@
   tags: [ollama]
   become: true
   ansible.builtin.shell: curl -fsSL https://ollama.com/install.sh | sh
-  when: not specialist_ollama_bin.stat.exists and specialist_ollama_source == 'script'
-
-- name: Install Ollama from the official Docker image
-  tags: [ollama]
-  become: true
-  ansible.builtin.shell: |
-    set -e
-    docker pull ollama/ollama:latest
-    docker create --name specialist-ollama-tmp ollama/ollama:latest
-    rm -rf /usr/local/lib/ollama
-    docker cp specialist-ollama-tmp:/usr/bin/ollama /usr/local/bin/ollama
-    docker cp specialist-ollama-tmp:/usr/lib/ollama /usr/local/lib/ollama
-    docker rm specialist-ollama-tmp
-    docker rmi ollama/ollama:latest
-  when: not specialist_ollama_bin.stat.exists and specialist_ollama_source == 'docker'
+  when: not specialist_ollama_bin.stat.exists
 
 - name: Check for the Ollama service
   tags: [ollama]
@@ -369,34 +355,13 @@
       download_model('{{ specialist_whisper_model }}', cache_dir='{{ specialist_root }}/models/whisper')"
     creates: "{{ specialist_root }}/models/whisper/models--Systran--faster-whisper-{{ specialist_whisper_model }}"
 
-- name: Create the Kokoro folder
-  tags: [app]
-  ansible.builtin.file:
-    path: "{{ specialist_root }}/models/kokoro"
-    state: directory
-    mode: "0755"
-
-- name: Download the Kokoro speech model
-  tags: [app]
-  ansible.builtin.get_url:
-    url: "{{ specialist_kokoro_url }}/{{ item.file }}"
-    dest: "{{ specialist_root }}/models/kokoro/{{ item.file }}"
-    checksum: "sha256:{{ item.sha256 }}"
-    mode: "0644"
-  loop:
-    - {file: kokoro-v1.0.int8.onnx, sha256: 6e742170d309016e5891a994e1ce1559c702a2ccd0075e67ef7157974f6406cb}
-    - {file: voices-v1.0.bin, sha256: bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d}
-  loop_control:
-    label: "{{ item.file }}"
-
-- name: Install the specialist commands
+- name: Install the specialist command
   tags: [app]
   become: true
   ansible.builtin.template:
-    src: "{{ item }}.sh.j2"
-    dest: "/usr/local/bin/{{ item }}"
+    src: specialist-voice.sh.j2
+    dest: /usr/local/bin/specialist-voice
     mode: "0755"
-  loop: [specialist, specialist-voice]
 
 # ------------------------------------------------------------------------ boot
 # Applied at every boot, because these settings do not survive a reboot on their own.
@@ -425,9 +390,10 @@
   tags: [boot]
   become: true
   ansible.builtin.template:
-    src: specialist-boot-check.sh.j2
-    dest: /usr/local/bin/specialist-boot-check
+    src: "{{ item }}.sh.j2"
+    dest: "/usr/local/bin/{{ item }}"
     mode: "0755"
+  loop: [specialist-usb-power, specialist-boot-check]
 
 - name: Install the boot check service
   tags: [boot]
@@ -466,7 +432,7 @@
 - name: Ask a question the corpus covers
   tags: [verify]
   ansible.builtin.command:
-    argv: [/usr/local/bin/specialist, "{{ specialist_verify_question }}"]
+    argv: [/usr/local/bin/specialist-voice, --no-speak, --text, "{{ specialist_verify_question }}"]
   register: specialist_check_answer
   changed_when: false
   failed_when: "'DIKSHA' not in specialist_check_answer.stdout"
@@ -474,32 +440,18 @@
 - name: Ask a question the corpus does not cover
   tags: [verify]
   ansible.builtin.command:
-    argv: [/usr/local/bin/specialist, Who won the cricket world cup?]
+    argv: [/usr/local/bin/specialist-voice, --no-speak, --text, Who won the cricket world cup?]
   register: specialist_check_refusal
   changed_when: false
-  failed_when: "'approved DIKSHA' not in specialist_check_refusal.stdout"
+  failed_when: "'REFUSED' not in specialist_check_refusal.stdout"
 
 - name: Ask for an answer in Hindi
   tags: [verify]
   ansible.builtin.command:
-    argv: [/usr/local/bin/specialist, --out-lang, hi, "{{ specialist_verify_question }}"]
+    argv: [/usr/local/bin/specialist-voice, --no-speak, --out-lang, hi, --text, "{{ specialist_verify_question }}"]
   register: specialist_check_hindi
   changed_when: false
   failed_when: specialist_check_hindi.stdout is not search('[ऀ-ॿ]')
-
-- name: Speak a test sentence with Kokoro in both languages
-  tags: [verify]
-  ansible.builtin.command:
-    chdir: "{{ specialist_root }}/app/python"
-    argv:
-      - "{{ specialist_venv }}/bin/python"
-      - -c
-      - |
-        from pocketinfer.models.kokoro import Kokoro
-        k = Kokoro()
-        assert k.synthesize("A fraction is a part of a whole.", "en")[:4] == b"RIFF"
-        assert k.synthesize("भिन्न एक संख्या है।", "hi")[:4] == b"RIFF"
-  changed_when: false
 
 - name: Check the CTranslate2 build and the Tesseract language packs
   tags: [verify]
@@ -513,7 +465,7 @@
   tags: [verify]
   ansible.builtin.debug:
     msg:
-      - "English: {{ specialist_check_answer.stdout_lines[-1] }}"
-      - "Refusal: {{ specialist_check_refusal.stdout_lines | select('search', 'approved DIKSHA') | first }}"
-      - "Hindi: {{ specialist_check_hindi.stdout_lines[-1] }}"
+      - "English: {{ specialist_check_answer.stdout_lines | select('search', '^   · ') | first }}"
+      - "Refusal: {{ specialist_check_refusal.stdout_lines | select('search', 'REFUSED') | first }}"
+      - "Hindi: {{ specialist_check_hindi.stdout_lines | select('search', '^   · ') | first }}"
       - "{{ specialist_check_tools.stdout }}"
