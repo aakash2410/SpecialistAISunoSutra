@@ -8,6 +8,7 @@ machines without Bhashini. The live Bhashini tests below cover the real thing.
 import base64
 import json
 import os
+import re
 import shutil
 
 import numpy as np
@@ -275,6 +276,38 @@ def test_wiring_streaming_plays_every_sentence_in_order(make_engine):
 
 
 # ------------------------------------------------------- the shipped artefact
+def test_full_index_leaves_out_garbled_scans_and_teacher_manuals():
+    index = os.path.join(os.path.dirname(CORPUS_DIR), "diksha_g7_all", "index")
+    with open(os.path.join(index, "chunks.jsonl"), encoding="utf-8") as f:
+        chunks = [json.loads(line) for line in f]
+    with open(os.path.join(index, "manifest.json"), encoding="utf-8") as f:
+        manifest = json.load(f)
+    assert manifest["num_chunks"] == len(chunks)
+    assert manifest["removed"]["dropped: garbled text"] > 0
+    assert not [c for c in chunks if re.search("teachher-manual|lesson-plan", c["source"])]
+
+
+def test_hindi_maths_terms_reach_translation_in_english(monkeypatch):
+    from local import providers
+
+    sent = []
+
+    class Translator:
+        def infer(self, text, src, tgt):
+            sent.append(text)
+            return {"translated_text": "What is different?"}
+
+    monkeypatch.setattr("pocketinfer.models.nmt.Nmt", Translator)
+    mt = providers.BhashiniMT()
+    # If the translator drops the term, it is added back so retrieval still sees the topic.
+    assert mt.translate("भिन्न क्या होता है?", "HI", "EN") == "What is different? (fraction)"
+    assert sent[-1] == "fraction क्या होता है?"
+    mt.translate("दो भिन्न प्रकार के पौधे कौन से हैं?", "HI", "EN")
+    assert sent[-1] == "दो भिन्न प्रकार के पौधे कौन से हैं?"
+    assert mt.translate("भिन्न", "EN", "HI") == "What is different?"
+    assert sent[-1] == "भिन्न"
+
+
 def test_shipped_index_is_consistent_and_built_with_e5(shipped_index_dir):
     embeddings = np.load(os.path.join(shipped_index_dir, "embeddings.npy"))
     with open(os.path.join(shipped_index_dir, "chunks.jsonl"), encoding="utf-8") as f:

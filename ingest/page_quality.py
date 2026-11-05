@@ -9,6 +9,12 @@ English only for now, because answers are generated from English passages.
 ``remove_unwanted`` then drops readable pages a teacher's question should not land
 on: lesson plans, front matter and repeats. It matches page headers only, so it is a
 rough filter, and anything it misses stays in the corpus.
+
+``clean_chunks`` runs when the index is built and checks each passage: OCR run over
+Hindi or Gujarati pages, which reads as English letters but says nothing, plus front
+matter anywhere on a page and every passage from a teacher's manual or lesson plan.
+Handbooks that mix teacher instructions with explanations stay. Removing passages with
+teacher instructions in them lost real content and made answers no better.
 """
 
 from __future__ import annotations
@@ -35,6 +41,20 @@ _NON_TEACHING_RE = re.compile(
 )
 _HEADER_CHARS = 400
 _DUPLICATE_CHARS = 300
+
+_TEACHER_FILE_RE = re.compile(r"teachh?er|lesson-plan|unit-plan|content-outline|post-course", re.IGNORECASE)
+_FRONT_MATTER_RE = re.compile(
+    r"acknowledge?ments?|textbook (?:review|development)|printed (?:on|in|at)\b|\bG\.?S\.?M\b|pledge"
+    r"|jana[- ]gana|jaya jaya|free distribution|all rights reserved|foreword|review workshop",
+    re.IGNORECASE,
+)
+# A word counts as recognised if it appears in this many books, so it needs a large corpus.
+_VOCABULARY_MIN_BOOKS = 8
+_GARBLE_CHECK_MIN_BOOKS = 50
+_MIN_RECOGNISED_SHARE = 0.70
+# Maths passages have few common words, and history passages have many rare names, so a
+# passage has to fail both tests to count as garbled.
+_MIN_COMMON_SHARE_IF_UNRECOGNISED = 0.20
 
 
 def page_problem(text: str) -> Optional[str]:
@@ -74,4 +94,44 @@ def remove_unwanted(docs: List[dict]) -> Tuple[List[dict], dict]:
         else:
             seen.add(opening)
             kept.append(doc)
+    return kept, dict(counts)
+
+
+def _book(chunk: dict) -> str:
+    return (chunk.get("source") or "").rsplit("/", 1)[-1]
+
+
+def _long_words(text: str) -> List[str]:
+    return re.findall(r"[a-z]{3,}", text.lower())
+
+
+def _is_garbled(text: str, vocabulary: set) -> bool:
+    long_words = _long_words(text)
+    if long_words and sum(w in vocabulary for w in long_words) / len(long_words) >= _MIN_RECOGNISED_SHARE:
+        return False
+    words = re.findall(r"[a-z]+", text.lower())
+    return not words or sum(w in _COMMON_WORDS for w in words) / len(words) < _MIN_COMMON_SHARE_IF_UNRECOGNISED
+
+
+def clean_chunks(chunks: List[dict]) -> Tuple[List[dict], dict]:
+    """Drop passages a teacher's question should not land on. Returns (kept, counts)."""
+    words_in_book = collections.defaultdict(set)
+    for chunk in chunks:
+        words_in_book[_book(chunk)].update(_long_words(chunk["text"]))
+    books_with_word = collections.Counter(w for words in words_in_book.values() for w in words)
+    vocabulary = {w for w, books in books_with_word.items() if books >= _VOCABULARY_MIN_BOOKS}
+    check_garble = len(words_in_book) >= _GARBLE_CHECK_MIN_BOOKS
+
+    kept: List[dict] = []
+    counts: collections.Counter = collections.Counter()
+    for chunk in chunks:
+        text = chunk["text"]
+        if _TEACHER_FILE_RE.search(_book(chunk)):
+            counts["dropped: teacher's book"] += 1
+        elif _FRONT_MATTER_RE.search(text):
+            counts["dropped: front matter"] += 1
+        elif check_garble and _is_garbled(text, vocabulary):
+            counts["dropped: garbled text"] += 1
+        else:
+            kept.append(chunk)
     return kept, dict(counts)

@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import re
 
+from pocketinfer.specialist.glossary import apply_glossary, keep_terms
 from pocketinfer.specialist.providers import AudioClip
 from pocketinfer.specialist.pipeline import extractive_llm
 
@@ -76,6 +77,9 @@ class BhashiniMT:
         src, tgt = src_lang.lower(), tgt_lang.lower()
         if src == tgt:
             return text
+        terms = []
+        if src == "hi" and tgt == "en":
+            text, terms = apply_glossary(text)
         # ALWAYS translate sentence by sentence. BHASHINI NMT is sentence-tuned and
         # silently truncates a multi-sentence paragraph to the first segment (no
         # error), so a single call would drop most of the answer.
@@ -89,7 +93,7 @@ class BhashiniMT:
             except Exception as e:  # noqa: BLE001
                 logger.warning("NMT failed on a sentence (%s); leaving it untranslated", e)
                 out.append(s)
-        return " ".join(out)
+        return keep_terms(" ".join(out), terms)
 
 
 # --------------------------------------------------------------------------- TTS

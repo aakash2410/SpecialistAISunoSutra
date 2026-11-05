@@ -33,6 +33,7 @@ sys.path.insert(0, os.path.join(_ROOT, "python"))
 
 from ingest.chunk import chunk_documents  # noqa: E402
 from ingest.diksha_pull import load_local  # noqa: E402
+from ingest.page_quality import clean_chunks  # noqa: E402
 from pocketinfer.models.embed import DEFAULT_MODEL_NAME, RECOMMENDED_MIN_SCORE, Embed  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -44,9 +45,10 @@ def build(corpus_dir: str, model_name: str, max_words: int, overlap: int):
         raise FileNotFoundError(f"No raw corpus at {raw_path}. Run diksha_pull first.")
 
     documents = load_local(raw_path)
-    chunks = chunk_documents(documents, max_words=max_words, overlap=overlap)
+    chunks, removed = clean_chunks(chunk_documents(documents, max_words=max_words, overlap=overlap))
     if not chunks:
         raise ValueError("No chunks produced — is raw/chapters.json empty?")
+    logger.info("Left out of the index: %s", removed)
     logger.info("Chunked %d documents into %d chunks", len(documents), len(chunks))
 
     embedder = Embed(model_name=model_name)
@@ -68,6 +70,7 @@ def build(corpus_dir: str, model_name: str, max_words: int, overlap: int):
         "dim": int(embeddings.shape[1]),
         "num_chunks": len(chunks),
         "num_documents": len(documents),
+        "removed": removed,
         "chunk_max_words": max_words,
         "chunk_overlap": overlap,
         "recommended_min_score": RECOMMENDED_MIN_SCORE,
