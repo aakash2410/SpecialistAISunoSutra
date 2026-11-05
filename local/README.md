@@ -14,7 +14,7 @@ Each part is swappable by name:
 
 | Option | Choices |
 |---|---|
-| `--asr` | `auto`, `bhashini`, `whisper` (`auto` uses Bhashini for Hindi. Whisper is not on the device, because it does not fit in memory beside the rest of the pipeline) |
+| `--asr` | `auto`, `bhashini`, `whisper` (`auto` uses Whisper `tiny.en` for English and Bhashini for Hindi) |
 | `--mt` | `bhashini`, `none` |
 | `--tts` | `bhashini` |
 | `--llm` | `ollama`, `extractive` |

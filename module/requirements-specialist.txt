@@ -11,3 +11,6 @@ ollama
 # Retrieval: multilingual-e5-small on ONNX, with no PyTorch.
 onnxruntime
 tokenizers
+
+# English speech input: tiny Whisper, on the CPU.
+faster-whisper

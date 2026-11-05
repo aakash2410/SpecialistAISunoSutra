@@ -28,7 +28,7 @@ Three limits apply to these numbers:
 
 | Step | Why it matters | Status |
 |---|---|---|
-| Install the safety model on the Jetson, measure memory in the full Hindi loop, rerun all tests | The numbers above must hold on the device | Next, once the Jetson is back online |
+| Install the safety model and English speech on the Jetson, measure speed and memory in the full voice loops, rerun all tests | The numbers above must hold on the device, and English speech has no device numbers yet | Next, once the Jetson is back online |
 | Reduce safety false alarms and medical misses | It blocks real lessons, such as menstruation and child marriage, and missed "A student fainted and is not waking up" | Open |
 | Safeguarding review of responses and helpline numbers | Required before classroom use | Not started, needs a reviewer |
 | Test the full loop with the network off | The device must work offline, and this is not yet proven | Not started |
@@ -51,7 +51,7 @@ A larger DIKSHA pull stopped at 3,332 of 5,101 books and is not in use. Detailed
 | Answer check | `nli-deberta-v3-small` on ONNX (Apache-2.0), tested against `open-jev` and chosen | Running on the Jetson |
 | Safety check | Patterns plus `nli-deberta-v3-small` fine-tuned for this job, as a second model beside the answer check | Chosen and tested, install on the Jetson pending |
 | Hindi speech input, translation through English, spoken output | Bhashini, without Tamil speech input or Indic-to-Indic translation, to save memory | Running on the Jetson, with translation on the GPU |
-| English speech input | Left out: Whisper does not fit in memory beside the rest of the pipeline, and Bhashini's speech model only covers Hindi | Removed. Typed English still works |
+| English speech input | Whisper `tiny.en` on the CPU, because Bhashini's speech model only covers Hindi and `small.en` did not fit in memory. It loads only for English speech | Tested on a Mac, install on the Jetson pending |
 | Reading textbook pages | Tesseract, because the bundled Bhashini service has no OCR | Installed |
 
 We moved off Llama because Mozilla's Human-Scale AI call excludes projects whose core depends on a slimmed-down frontier model, and it names Llama 1B and 3B as examples. Whether a small Qwen also counts is still an open question for Mozilla.
@@ -103,6 +103,8 @@ The gate still lets through off-topic questions that share a word with the corpu
 **Jetson memory, out of 7.4 GB with the desktop on.** With translation on the GPU, Bhashini holds about 1.5 GB of process memory, down from 4.4 GB originally, and free memory stayed above 2 GB through the Hindi loop with Qwen fully on the GPU. Whisper was left out when Bhashini was larger, because it pushed Qwen 31% onto the CPU, and it has not been retested since this change.
 
 **Safety check, first version with the base model, on 79 questions written after the design was frozen.** It caught 33 of 39 unsafe questions and wrongly blocked 4 of 40 safe ones, mostly history questions about conflict or caste. The 6 misses were then patched, so they no longer count as unseen. The wording of the responses is a draft, and it needs review by someone with safeguarding experience before classroom use.
+
+**English speech, on a Mac, using 12 curriculum questions in a synthetic Indian English voice.** `tiny.en` got 11 of 12 exactly right, with "Ashok" for "Ashoka" as its only slip. `base.en` got 12 of 12 and `small.en` got 11 of 12, so the smallest model lost nothing on this set. Clean synthetic speech is an easy test, and classroom speech will be harder.
 
 **Safety model, on 79 newer questions.** These were written after the checkpoint was chosen, and the safe ones are deliberately hard, sensitive curriculum questions.
 

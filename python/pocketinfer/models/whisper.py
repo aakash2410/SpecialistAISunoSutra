@@ -4,8 +4,9 @@ Context-aware speech-to-text: unlike the small Vosk model (Kaldi + a weak n-gram
 LM, which mangles technical vocabulary), Whisper attends over the whole utterance,
 so science terms like "photosynthesis" transcribe correctly.
 
-Runs on **faster-whisper**, whose backend is CTranslate2. The device install uses a
-CUDA build of CTranslate2, shared with the Bhashini translation service.
+Runs on **faster-whisper**, whose backend is CTranslate2. It stays on the CPU, so it
+takes no GPU memory from the answer model, and it only loads when the request is English
+speech, so Hindi sessions do not pay for it.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "small.en"
+DEFAULT_MODEL = "tiny.en"
 # Where model weights are cached (kept with the other on-device data).
 _MODEL_ENV = "SPECIALIST_WHISPER_DIR"
 _DEFAULT_DIRS = ("/opt/specialist/models/whisper",)
@@ -34,15 +35,16 @@ def _resolve_download_root(explicit: Optional[str]) -> Optional[str]:
 
 class Whisper:
     def __init__(self, model_size: str = DEFAULT_MODEL, model_dir: Optional[str] = None,
-                 device: str = "auto", compute_type: str = "auto"):
+                 device: str = "cpu", compute_type: str = "float32"):
         from faster_whisper import WhisperModel
 
         download_root = _resolve_download_root(model_dir)
-        # 'auto' lets CTranslate2 pick CUDA when available (it is, on the Jetson),
-        # else CPU. compute_type 'auto' picks a sensible precision per device.
+        # float32, because the CTranslate2 build on the Jetson has run nothing else on the CPU.
+        # A set model folder means the device, which must never try to download at run time.
         self.model_size = model_size
         self._model = WhisperModel(
-            model_size, device=device, compute_type=compute_type, download_root=download_root
+            model_size, device=device, compute_type=compute_type, download_root=download_root,
+            local_files_only=bool(download_root),
         )
         logger.info("Whisper loaded: %s (device=%s, compute=%s)", model_size, device, compute_type)
 

@@ -3,7 +3,7 @@
 Every provider implements a contract from ``pocketinfer.specialist.providers``, so
 they are interchangeable. Pick them by name on the command line:
 
-    --asr auto|bhashini|whisper    (auto: Bhashini. Whisper must be asked for by name)
+    --asr auto|bhashini|whisper    (auto: Whisper for English, Bhashini for Hindi)
     --mt  bhashini|none
     --tts bhashini
     --llm ollama|extractive
@@ -36,7 +36,7 @@ class BhashiniASR:
 class WhisperASR:
     name = "whisper"
 
-    def __init__(self, model_size: str = "small.en", model_dir: str | None = None,
+    def __init__(self, model_size: str = "tiny.en", model_dir: str | None = None,
                  task: str = "transcribe"):
         try:
             from pocketinfer.models.whisper import Whisper
@@ -130,7 +130,7 @@ MT_PROVIDERS = {"none": NoopMT, "bhashini": BhashiniMT}
 TTS_PROVIDERS = {"bhashini": BhashiniTTS}
 
 
-def make_asr(name: str, whisper_model: str = "small.en"):
+def make_asr(name: str, whisper_model: str = "tiny.en"):
     if name == "whisper":
         return WhisperASR(model_size=whisper_model)
     if name in ASR_PROVIDERS:

@@ -303,18 +303,10 @@ def test_voice_loop_command_reads_a_page_image(shipped_index_dir, tesseract_read
 
 def test_voice_loop_command_transcribes_english_speech(shipped_index_dir, whisper_ready, fixtures_dir):
     result = run_command(
-        "-m", "local.voice_loop", "--from-wav", os.path.join(fixtures_dir, "question_en.wav"), "--asr", "whisper",
+        "-m", "local.voice_loop", "--from-wav", os.path.join(fixtures_dir, "question_en.wav"),
         "--llm", "extractive", "--mt", "none", "--no-speak")
     prints_grounded_answer(result)
     assert "photosynthesis" in result.stdout.split("[3 SPEC]")[0].lower()
-
-
-def test_voice_loop_refuses_english_speech_unless_whisper_is_named(shipped_index_dir, fixtures_dir):
-    result = run_command(
-        "-m", "local.voice_loop", "--from-wav", os.path.join(fixtures_dir, "question_en.wav"),
-        "--llm", "extractive", "--mt", "none", "--no-speak")
-    assert result.returncode != 0
-    assert "English speech input is not enabled" in result.stderr
 
 
 def test_run_specialist_command_uses_the_real_model(shipped_index_dir, ollama_ready):

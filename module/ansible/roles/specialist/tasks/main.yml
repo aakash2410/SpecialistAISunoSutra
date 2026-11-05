@@ -351,6 +351,15 @@
     dest: "{{ specialist_root }}/models/"
     mode: "0644"
 
+# Only download here. Loading it would need a compute type this CTranslate2 build may not run.
+- name: Download the English speech model
+  tags: [app]
+  ansible.builtin.command:
+    cmd: >-
+      {{ specialist_venv }}/bin/python -c "from faster_whisper import download_model;
+      download_model('{{ specialist_whisper_model }}', cache_dir='{{ specialist_root }}/models/whisper')"
+    creates: "{{ specialist_root }}/models/whisper/models--Systran--faster-whisper-{{ specialist_whisper_model }}"
+
 - name: Install the specialist commands
   tags: [app]
   become: true

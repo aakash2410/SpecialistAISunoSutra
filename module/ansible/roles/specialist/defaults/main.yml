@@ -15,6 +15,9 @@ specialist_assets_dir: "{{ specialist_root }}/assets"
 # Answer model. Replace this with the fine-tuned model once it exists.
 specialist_llm_model: qwen2.5:1.5b
 
+# English speech input. Hindi goes through Bhashini.
+specialist_whisper_model: tiny.en
+
 # How to install Ollama if it is missing: "script" uses ollama.com/install.sh, and
 # "docker" copies it out of the official image. Use "docker" where GitHub downloads
 # are slow, because the install script cannot resume.
