@@ -36,6 +36,9 @@ _RULES = [(re.compile(pattern), english) for pattern, english in [
     (_term("सम संख्या(?:एँ|एं|ओं)?"), "even number"),
     (_term("विषम संख्या(?:एँ|एं|ओं)?"), "odd number"),
     (_term("बहुलक"), "mode"),
+    # "चालन" also means driving, so it needs a question about it or a heat word beside it.
+    (_term("(?:ऊष्मा|ताप|ऊष्मीय)(?: का)? चालन"), "conduction of heat"),
+    (rf"{_term('चालन')}(?=\s+क्या{_END})", "conduction"),
 ]]
 
 

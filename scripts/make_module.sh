@@ -38,7 +38,7 @@ mkdir -p "$APP/models" "$APP/specialist" "$OUT/payload/corpus" "$OUT/payload/mod
 # --- code: only what the pipeline runs ---------------------------------------
 cp "$ROOT/run_specialist.py" "$OUT/payload/app/"
 cp "$PKG/__init__.py" "$APP/"
-for model in asr nmt tts ocr embed verify whisper; do
+for model in asr nmt tts ocr embed verify whisper kokoro; do
   cp "$PKG/models/$model.py" "$APP/models/"
 done
 cp "$PKG/specialist/"*.py "$APP/specialist/"

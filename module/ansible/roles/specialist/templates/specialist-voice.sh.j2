@@ -2,6 +2,9 @@
 # Managed by the Specialist Ansible role. Runs the full voice loop.
 #   specialist-voice --in-lang hi --out-lang hi --from-wav question.wav
 #   specialist-voice --in-lang hi --out-lang hi --from-image page.jpg
-#   specialist-voice --in-lang hi --out-lang hi --mic-device plughw:1,0
+#   specialist-voice --in-lang hi --out-lang hi
+set -a
+. /etc/default/specialist
+set +a
 cd {{ specialist_root }}/app || exit 1
-exec {{ specialist_venv }}/bin/python -W ignore -m local.voice_loop --ollama-model {{ specialist_llm_model }} "$@"
+exec {{ specialist_venv }}/bin/python -W ignore -m local.voice_loop --ollama-model {{ specialist_llm_model }} --tts {{ specialist_tts }} "$@"

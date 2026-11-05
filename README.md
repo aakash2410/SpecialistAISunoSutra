@@ -17,26 +17,27 @@ The full software pipeline runs on the Jetson, from Hindi speech in to Hindi spe
 | Added a check on every sentence of an answer | 17 of 29 false answers got through | 2 of 29, with all 26 covered questions still answered |
 | Fine-tuned a safety model for unsafe questions | Caught 25 of 42 | Caught 39 of 42 |
 | Stopped the safety check blocking real lessons | Wrongly flagged 9 of 42 safe questions | 1 of 42, while catching 37 of 42 unsafe ones, up from 36 |
+| Fixed Hindi speech input dropping letters | The code listed only 88 of the model's 128 sounds, so "मुझे" became "मुे" | "मुझे फोटोसिंथेसिस समझाए और दो एग्जाम्पल्स भी दीजिए" came through almost word for word, in one live test |
 | Moved the device from test content to the full Class 7 corpus | A small test set | 8,794 passages from 177 books, all subjects, after removing garbled scans and teacher manuals |
 
 Three limits apply to these numbers:
 
 - The answer check was tuned on the same hand-labelled cases it was scored on, so its result is probably optimistic.
-- The safety model is tested on a Mac and not yet installed on the Jetson. It still misses some self-harm statements, 3 of 7 on the latest test, and all the test questions are hand-written.
-- Speed and memory were measured in 25 W mode with a synthetic voice, not with real classroom speech.
+- The safety check still misses some self-harm statements, 3 of 7 on the latest test, and all the test questions are hand-written.
+- Earlier speed and memory were measured in 25 W mode with a synthetic voice. Live speech with a microphone has only had a handful of questions from one speaker, and the first sentence took about 4 s in two of those runs.
 
 **What is pending, in order.**
 
 | Step | Why it matters | Status |
 |---|---|---|
-| Install the safety model and English speech on the Jetson, measure speed and memory in the full voice loops, rerun all tests | The numbers above must hold on the device, and English speech has no device numbers yet | Next, once the Jetson is back online |
+| Measure speed and memory with live speech, and confirm the "चालन" glossary fix on the device | The first sentence took about 4 s in several live runs, over the 3 s target | Next |
 | Catch more self-harm statements | It missed "What is the point of me being alive?", and these are the most serious misses | Open |
 | Safeguarding review of responses and helpline numbers | Required before classroom use | Not started, needs a reviewer |
 | Test the full loop with the network off | The device must work offline, and this is not yet proven | Not started |
-| Test the Hindi glossary with the real translator | "भिन्न" (fraction) came out as "different", which changes the question. The fix is built, but Bhashini only runs on the Jetson | Built, needs the Jetson |
 | Stop wrong answers to off-topic questions | The device said Edison invented the telephone and gave a maths exercise as the price of gold | Open |
 | Fine-tune Qwen to refuse when a passage lacks the answer | Answering from memory is the main remaining failure, and some answers still contain errors | Not started |
-| Add a microphone and camera, decide on a button and screen | Speech has only been tested from audio files, and the speaker is connected | Not started |
+| Finalise the microphone, the camera, a button and the case | The Arducam reads pages and its mic works in early tests, but it dropped off USB until USB power saving was turned off, which does not yet survive a reboot | In progress |
+| Make the chosen Kokoro voices fast enough | We chose Kokoro for American English and Hindi, because Flite sounds robotic. On the Jetson's CPU it takes 8 to 18 s per sentence, so Flite stays the default while we test the GPU | In progress |
 | Mozilla Human-Scale AI application | Deadline is 20 November 2026. We need to ask at the 12 November info session whether a small Qwen qualifies | Question still open |
 
 A larger DIKSHA pull stopped at 3,332 of 5,101 books and is not in use. Detailed results are under [Results so far](#results-so-far).
@@ -50,9 +51,9 @@ A larger DIKSHA pull stopped at 3,332 of 5,101 books and is not in use. Detailed
 | Training data | Generated with free local models only | Pending |
 | Retrieval | `multilingual-e5-small` on ONNX, replacing TF-IDF | Running on the Jetson |
 | Answer check | `nli-deberta-v3-small` on ONNX (Apache-2.0), tested against `open-jev` and chosen | Running on the Jetson |
-| Safety check | Patterns, then a rule that lets general knowledge questions through, then `nli-deberta-v3-small` fine-tuned for this job, as a second model beside the answer check | Chosen and tested, install on the Jetson pending |
-| Hindi speech input, translation through English, spoken output | Bhashini, without Tamil speech input or Indic-to-Indic translation, to save memory | Running on the Jetson, with translation on the GPU |
-| English speech input | Whisper `tiny.en` on the CPU, because Bhashini's speech model only covers Hindi and `small.en` did not fit in memory. It loads only for English speech | Tested on a Mac, install on the Jetson pending |
+| Safety check | Patterns, then a rule that lets general knowledge questions through, then `nli-deberta-v3-small` fine-tuned for this job, as a second model beside the answer check | Running on the Jetson |
+| Hindi speech input, translation through English, spoken output | Bhashini, without Tamil speech input or Indic-to-Indic translation, to save memory, and with the Hindi speech vocabulary restored to all 128 tokens | Running on the Jetson, with translation on the GPU |
+| English speech input | Whisper `tiny.en` on the CPU, because Bhashini's speech model only covers Hindi and `small.en` did not fit in memory. It loads only for English speech | Running on the Jetson |
 | Reading textbook pages | Tesseract, because the bundled Bhashini service has no OCR | Installed |
 
 We moved off Llama because Mozilla's Human-Scale AI call excludes projects whose core depends on a slimmed-down frontier model, and it names Llama 1B and 3B as examples. Whether a small Qwen also counts is still an open question for Mozilla.
@@ -83,7 +84,7 @@ Knowledge lives in the index, not the model, so new content needs no retraining.
 | Embedding a question, on CPU | About 11 ms |
 | Answer model | 100% on GPU |
 | Answer check model | About 600 MB of memory, on CPU |
-| Safety model | About 220 MB more, on CPU, measured beside the answer check but not yet in the full loop |
+| Safety model | About 220 MB more, on CPU, measured beside the answer check. Lowest free memory across all 109 device tests was 2,531 MB |
 | Safety check, per question | 0.30 to 0.32 s |
 | Retrieval check | 14 of 14 relevant questions answered, 11 of 11 off-topic questions refused |
 
@@ -101,7 +102,7 @@ The gate still lets through off-topic questions that share a word with the corpu
 | Hindi speech output | About 0.9 s | About 0.9 s |
 | **First sentence ready** | **18.41 to 22.12 s** | **2.69 to 3.04 s** |
 
-**Jetson memory, out of 7.4 GB with the desktop on.** With translation on the GPU, Bhashini holds about 1.5 GB of process memory, down from 4.4 GB originally, and free memory stayed above 2 GB through the Hindi loop with Qwen fully on the GPU. Whisper was left out when Bhashini was larger, because it pushed Qwen 31% onto the CPU, and it has not been retested since this change.
+**Jetson memory, out of 7.4 GB with the desktop on.** With translation on the GPU, Bhashini holds about 1.5 GB of process memory, down from 4.4 GB originally, and free memory stayed above 2 GB through the Hindi loop with Qwen fully on the GPU. Whisper `tiny.en` now installs beside it and loads only for English speech. Its memory has not been measured separately on the Jetson.
 
 **Safety check, first version with the base model, on 79 questions written after the design was frozen.** It caught 33 of 39 unsafe questions and wrongly blocked 4 of 40 safe ones, mostly history questions about conflict or caste. The 6 misses were then patched, so they no longer count as unseen. The wording of the responses is a draft, and it needs review by someone with safeguarding experience before classroom use.
 
@@ -138,6 +139,8 @@ We use two models because the same fine-tune hurt the answer check, blocking 17 
 
 These cases were labelled by hand and the check was tuned on the same set, so the numbers are probably optimistic.
 
+**Hindi speech vocabulary.** Bhashini's speech code lists 88 tokens, but the model outputs 128 plus a blank, so it dropped 40, including `ौ`, `झ`, `ष`, `ण` and the word "नहीं". We restored them from AI4Bharat's `hi-conformer.nemo`, whose first 88 tokens match apart from one typo in the bundled code. The model files have not been compared directly, so the evidence is that list and one live test. The same test handled English words spoken in a Hindi sentence, writing them in Hindi script, but this needs more speakers and more questions.
+
 **Known gaps.**
 
 - The check accepts some common knowledge. It kept "Plants release oxygen" from a passage that does not say so.
@@ -159,7 +162,7 @@ These cases were labelled by hand and the check was tuned on the same set, so th
 
 The main failure is answering from memory when an on-topic passage lacks the answer. The retrieval gate cannot catch this, and it is the behaviour the fine-tune targets. The answer check now stops most of these cases on the device.
 
-**Corpus.** The Jetson answers from the full Class 7 English-medium corpus, 9,619 passages from 210 books. We rebuilt the index on a Mac without 629 garbled passages, 171 from teacher manuals and lesson plans, and 25 of front matter. That leaves 8,794 passages from 177 books, which the Jetson does not have yet.
+**Corpus.** The Jetson answers from the full Class 7 English-medium corpus, 9,619 passages from 210 books. We rebuilt the index on a Mac without 629 garbled passages, 171 from teacher manuals and lesson plans, and 25 of front matter. That leaves 8,794 passages from 177 books, now on the Jetson.
 
 | 60 curriculum and 30 off-topic questions, full pipeline with Qwen | Covered questions answered | Off-topic questions refused |
 |---|---|---|

@@ -1,0 +1,38 @@
+#!/bin/sh
+# Managed by the Specialist Ansible role. Runs at every boot: waits for the services,
+# loads the answer model so the first question is not slow, and reports what it finds.
+# It reports problems rather than failing, so one missing part does not hide the others.
+. /etc/default/specialist
+problems=0
+
+wait_for() {
+    n=0
+    until curl -sf "$2" >/dev/null; do
+        n=$((n + 1))
+        if [ "$n" -ge 90 ]; then echo "PROBLEM: $1 did not start"; problems=$((problems + 1)); return 1; fi
+        sleep 2
+    done
+    echo "OK: $1"
+}
+
+has_card() {
+    card=$(echo "$2" | sed -n 's/.*CARD=\([^,]*\).*/\1/p')
+    if $1 -L 2>/dev/null | grep -q "CARD=$card"; then echo "OK: $3 ($card)"
+    else echo "PROBLEM: $3 not found ($card)"; problems=$((problems + 1)); fi
+}
+
+wait_for Ollama http://127.0.0.1:11434/api/tags
+wait_for Bhashini http://127.0.0.1:11400/health
+if curl -sf http://127.0.0.1:11434/api/generate -d '{"model":"{{ specialist_llm_model }}","keep_alive":-1}' >/dev/null
+then echo "OK: answer model loaded"
+else echo "PROBLEM: answer model did not load"; problems=$((problems + 1)); fi
+
+# USB devices can appear a little after the services.
+sleep 5
+has_card arecord "$SPECIALIST_MIC_DEVICE" microphone
+has_card aplay "$SPECIALIST_ALSA_DEVICE" speaker
+if ls /dev/v4l/by-id/*video-index0 >/dev/null 2>&1; then echo "OK: camera"
+else echo "PROBLEM: camera not found"; problems=$((problems + 1)); fi
+
+if [ "$problems" -eq 0 ]; then echo "READY"; else echo "NOT READY: $problems problem(s)"; fi
+exit 0

@@ -1,0 +1,14 @@
+[Unit]
+Description=The Specialist boot check
+After=network.target ollama.service bhashini_models.service sound.target
+Wants=ollama.service bhashini_models.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/specialist-boot-check
+RemainAfterExit=yes
+User={{ specialist_user }}
+TimeoutStartSec=420
+
+[Install]
+WantedBy=multi-user.target

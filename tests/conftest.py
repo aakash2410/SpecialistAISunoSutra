@@ -102,6 +102,16 @@ def whisper_ready():
 
 
 @pytest.fixture(scope="session")
+def kokoro_ready():
+    if importlib.util.find_spec("phonemizer") is None or importlib.util.find_spec("espeakng_loader") is None:
+        pytest.skip("phonemizer or espeakng-loader is not installed")
+    from pocketinfer.models.kokoro import _resolve_dir
+
+    if not _resolve_dir():
+        pytest.skip("Kokoro model missing")
+
+
+@pytest.fixture(scope="session")
 def tesseract_ready():
     if not shutil.which("tesseract"):
         pytest.skip("Tesseract is not installed")

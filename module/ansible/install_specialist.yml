@@ -6,7 +6,7 @@
 #
 # -K asks for the device's sudo password. Safe to re-run: finished steps are skipped.
 #
-# Tags: system | assets | ollama | bhashini | app | content | verify
+# Tags: system | assets | ollama | bhashini | app | boot | content | verify
 #   ansible-playbook -i inventory.ini install_specialist.yml -K --tags content
 
 - hosts: specialist

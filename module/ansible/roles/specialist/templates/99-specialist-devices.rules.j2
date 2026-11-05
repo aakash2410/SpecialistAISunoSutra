@@ -1,0 +1,5 @@
+# Managed by the Specialist Ansible role. Applied at every boot and every time the camera is plugged in.
+# USB power saving made this camera drop off the bus.
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="{{ specialist_camera_vendor }}", ATTR{idProduct}=="{{ specialist_camera_product }}", TEST=="power/control", ATTR{power/control}="on"
+# Without continuous autofocus the camera cannot read a page held close to it.
+ACTION=="add", SUBSYSTEM=="video4linux", ATTRS{idVendor}=="{{ specialist_camera_vendor }}", ATTRS{idProduct}=="{{ specialist_camera_product }}", ATTR{index}=="0", RUN+="/usr/bin/v4l2-ctl -d $devnode -c focus_automatic_continuous=1"

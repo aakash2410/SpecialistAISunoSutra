@@ -19,11 +19,9 @@ A test that needs something this machine lacks skips and names it. A full pass n
 
 ## Current results
 
-On the Jetson with the full stack, each test in its own process: 47 passed, 3 skipped, 2 expected failures, 1 failed. The failure was `test_full_hindi_voice_loop_meets_the_target_on_the_device`, at 12.6 s against the 3 s target. It passed after translation moved to the GPU, along with the other live Hindi tests, but the full suite has not been rerun since. The skips are Whisper, which is left out, and two harvest tests that need PyMuPDF, which only runs off the device.
+On the Jetson with the full stack on 5 November 2026, each test in its own process: 104 passed, 1 failed, 2 expected failures, 2 skipped. Lowest free memory was 2,531 MB. The failure was "चालन क्या है?" not translating to "conduction". We then added it to the glossary, but that fix has only run on a Mac, so the suite needs one more run on the device. The skips are two harvest tests that need PyMuPDF, which only runs off the device.
 
 The 2 expected failures are known gaps in the answer check. It accepts some common knowledge the passage never states, and it checks that a sentence is supported, not that it answers the question.
-
-On a Mac on 5 November 2026: 88 passed, 19 skipped, 2 expected failures. The skips are the Hindi tests, including the glossary tests, which need Bhashini, and one test that only means something on the Jetson.
 
 ## Test files
 

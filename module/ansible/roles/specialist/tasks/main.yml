@@ -186,6 +186,15 @@
     regexp: '^ *"ta": ort\.InferenceSession\(\n *f"\{checkpoint_dir\}/ta-conformer\.onnx"\n *\),\n'
     replace: ""
 
+# The archive's asr/infer.py lists only 88 of the model's 128 tokens, so it silently drops
+# common sounds such as the letters in "paudhe" and "mujhe". This is the model's full list.
+- name: Give Hindi speech input its full vocabulary
+  tags: [bhashini]
+  ansible.builtin.replace:
+    path: "{{ specialist_bhashini_dir }}/asr/infer.py"
+    regexp: 'self\.VOCAB_HI = \[[^\]]*\]'
+    replace: 'self.VOCAB_HI = ["<unk>", "ा", "े", "र", "ी", "न", "ि", "ल", "क", "्", "▁", "स", "म", "त", "▁स", "ो", "▁द", "▁क", "ट", "ं", "▁अ", "प", "▁ब", "▁प", "व", "ु", "य", "▁है", "▁म", "ह", "▁ज", "▁व", "▁आ", "ग", "द", "▁ह", "ू", "श", "्र", "ै", "ब", "्य", "▁इ", "ज", "ड", "▁न", "र्", "▁के", "▁ल", "▁में", "च", "ए", "ज़", "▁उ", "ख", "▁र", "▁फ", "ों", "ॉ", "भ", "▁ग", "ंग", "ता", "ने", "▁और", "▁का", "ाइ", "्ट", "▁प्र", "▁को", "▁की", "▁कर", "▁हो", "▁से", "▁च", "ध", "▁हैं", "ई", "्स", "▁तो", "▁त", "▁थ", "फ", "थ", "स्ट", "▁कि", "न्ट", "▁भी", "▁ड", "▁वि", "▁नहीं", "▁रह", "▁टू", "▁एक", "छ", "▁श", "ड़", "ण", "ौ", "ष", "ँ", "उ", "इ", "ठ", "अ", "़", "ओ", "ऑ", "घ", "ढ", "झ", "आ", "ृ", "ऊ", "ञ", "ः", "ऐ", "औ", "ऋ", "ॅ", "ङ", "ऱ", "ॆ", "ऩ", "ॐ", "ऍ", "ॊ", "ॠ"]'
+
 # nmt/infer.py counts "en" as an Indic language, so every request went to the
 # Indic-to-Indic model and the two dedicated English models sat unused. Without this,
 # removing that model makes all translation fail.
@@ -360,6 +369,26 @@
       download_model('{{ specialist_whisper_model }}', cache_dir='{{ specialist_root }}/models/whisper')"
     creates: "{{ specialist_root }}/models/whisper/models--Systran--faster-whisper-{{ specialist_whisper_model }}"
 
+- name: Create the Kokoro folder
+  tags: [app]
+  ansible.builtin.file:
+    path: "{{ specialist_root }}/models/kokoro"
+    state: directory
+    mode: "0755"
+
+- name: Download the Kokoro speech model
+  tags: [app]
+  ansible.builtin.get_url:
+    url: "{{ specialist_kokoro_url }}/{{ item.file }}"
+    dest: "{{ specialist_root }}/models/kokoro/{{ item.file }}"
+    checksum: "sha256:{{ item.sha256 }}"
+    mode: "0644"
+  loop:
+    - {file: kokoro-v1.0.int8.onnx, sha256: 6e742170d309016e5891a994e1ce1559c702a2ccd0075e67ef7157974f6406cb}
+    - {file: voices-v1.0.bin, sha256: bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d}
+  loop_control:
+    label: "{{ item.file }}"
+
 - name: Install the specialist commands
   tags: [app]
   become: true
@@ -368,6 +397,53 @@
     dest: "/usr/local/bin/{{ item }}"
     mode: "0755"
   loop: [specialist, specialist-voice]
+
+# ------------------------------------------------------------------------ boot
+# Applied at every boot, because these settings do not survive a reboot on their own.
+- name: Install the hardware settings
+  tags: [boot, app]
+  become: true
+  ansible.builtin.template:
+    src: specialist.env.j2
+    dest: /etc/default/specialist
+    mode: "0644"
+
+- name: Install the camera rules
+  tags: [boot]
+  become: true
+  ansible.builtin.template:
+    src: 99-specialist-devices.rules.j2
+    dest: /etc/udev/rules.d/99-specialist-devices.rules
+    mode: "0644"
+
+- name: Apply the camera rules
+  tags: [boot]
+  become: true
+  ansible.builtin.shell: udevadm control --reload-rules && udevadm trigger --action=add --subsystem-match=usb --subsystem-match=video4linux
+
+- name: Install the boot check
+  tags: [boot]
+  become: true
+  ansible.builtin.template:
+    src: specialist-boot-check.sh.j2
+    dest: /usr/local/bin/specialist-boot-check
+    mode: "0755"
+
+- name: Install the boot check service
+  tags: [boot]
+  become: true
+  ansible.builtin.template:
+    src: specialist-boot-check.service.j2
+    dest: /etc/systemd/system/specialist-boot-check.service
+    mode: "0644"
+
+- name: Run the boot check at every boot
+  tags: [boot]
+  become: true
+  ansible.builtin.systemd:
+    name: specialist-boot-check
+    enabled: true
+    daemon_reload: true
 
 # --------------------------------------------------------------------- content
 # Content is separate from code, so the syllabus can change on its own: --tags content
@@ -410,6 +486,20 @@
   register: specialist_check_hindi
   changed_when: false
   failed_when: specialist_check_hindi.stdout is not search('[ऀ-ॿ]')
+
+- name: Speak a test sentence with Kokoro in both languages
+  tags: [verify]
+  ansible.builtin.command:
+    chdir: "{{ specialist_root }}/app/python"
+    argv:
+      - "{{ specialist_venv }}/bin/python"
+      - -c
+      - |
+        from pocketinfer.models.kokoro import Kokoro
+        k = Kokoro()
+        assert k.synthesize("A fraction is a part of a whole.", "en")[:4] == b"RIFF"
+        assert k.synthesize("भिन्न एक संख्या है।", "hi")[:4] == b"RIFF"
+  changed_when: false
 
 - name: Check the CTranslate2 build and the Tesseract language packs
   tags: [verify]

@@ -7,7 +7,8 @@ This role installs the full software pipeline on a Jetson running JetPack 6. It 
 | Part | Where |
 |---|---|
 | Answer model, Qwen2.5-1.5B | Ollama |
-| Hindi speech input, translation to and from English, speech output | Bhashini service on `127.0.0.1:11400`, in `/opt/specialist/bhashini_models` |
+| Hindi speech input, translation to and from English | Bhashini service on `127.0.0.1:11400`, in `/opt/specialist/bhashini_models` |
+| Speech output in American English and Hindi, Kokoro | `/opt/specialist/models/kokoro` |
 | English speech input, Whisper `tiny.en` | `/opt/specialist/models/whisper` |
 | Retrieval, `multilingual-e5-small` | `/opt/specialist/models` |
 | Answer verifier, `nli-deberta-v3-small` | `/opt/specialist/models` |
@@ -45,6 +46,9 @@ Change these in the inventory or with `-e`. The full list is in `ansible/roles/s
 |---|---|
 | `specialist_llm_model` | Swap the answer model, for example to the fine-tuned model once it exists |
 | `specialist_ocr_packs` | Choose the languages for reading pages |
+| `specialist_tts` | Choose the speech engine, `kokoro` or `bhashini` |
+| `specialist_voice_en`, `specialist_voice_hi` | Choose the voices |
+| `specialist_mic_device`, `specialist_speaker_device` | Choose the microphone and speaker |
 | `specialist_ollama_source` | Install Ollama from `docker` where GitHub downloads are slow |
 | `specialist_assets_dir` | Reuse files you have already downloaded |
 
@@ -75,10 +79,22 @@ specialist-voice --in-lang hi --out-lang hi --from-image page.jpg
 ```
 
 ```bash
-specialist-voice --in-lang hi --out-lang hi --mic-device plughw:1,0
+specialist-voice --in-lang hi --out-lang hi
 ```
 
 Set `SPECIALIST_ALSA_DEVICE` to choose the speaker, or pass `--no-speak` to print only.
+
+## Every boot
+
+The install sets these up to apply automatically. USB power saving stays off for the camera and continuous autofocus stays on, including after a replug. The microphone and speaker are chosen in `/etc/default/specialist`, using `specialist_mic_device` and `specialist_speaker_device`.
+
+A boot check then waits for the services, loads the answer model and looks for the microphone, speaker and camera. To see its result:
+
+```bash
+journalctl -u specialist-boot-check -b --no-pager | tail -12
+```
+
+It ends in `READY`, or `NOT READY` with the problems listed above it. The voice loop itself does not start at boot, because it still needs someone to press Enter.
 
 ## Power mode
 

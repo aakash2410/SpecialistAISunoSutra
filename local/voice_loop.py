@@ -9,7 +9,7 @@ Give it a request in any of these ways:
   * a USB mic:       python -m local.voice_loop --mic-device plughw:1,0
 
 Swap any component by name (contracts live in pocketinfer.specialist.providers):
-  --asr auto|whisper|bhashini   --mt bhashini|none   --tts bhashini   --llm ollama|extractive
+  --asr auto|whisper|bhashini   --mt bhashini|none   --tts kokoro|bhashini   --llm ollama|extractive
 """
 
 from __future__ import annotations
@@ -228,12 +228,12 @@ def main():
     ap.add_argument("--text", default=None, help="skip ASR: use this text as the request")
     ap.add_argument("--from-wav", default=None, help="use a WAV file as the spoken request")
     ap.add_argument("--from-image", default=None, help="read the request from a page image (OCR)")
-    ap.add_argument("--mic-device", default="plughw:1,0",
+    ap.add_argument("--mic-device", default=os.environ.get("SPECIALIST_MIC_DEVICE", "plughw:1,0"),
                     help="ALSA capture device for the live mic (find it with arecord -l)")
     # providers (swappable)
     ap.add_argument("--asr", default="auto", help="auto|whisper|bhashini")
     ap.add_argument("--mt", default="bhashini", help="bhashini|none")
-    ap.add_argument("--tts", default="bhashini", help="bhashini")
+    ap.add_argument("--tts", default="bhashini", help="kokoro|bhashini")
     ap.add_argument("--llm", default="ollama", help="ollama|extractive")
     ap.add_argument("--stream", action="store_true",
                     help="stream the answer sentence-by-sentence: speak sentence N while "
