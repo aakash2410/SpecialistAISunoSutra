@@ -83,6 +83,8 @@ Mozilla's view on a small Qwen is still an open question, so we keep the answer 
 
 ## How the pipeline works
 
+![How The Specialist answers a question](docs/architecture.png)
+
 1. **Request:** the teacher speaks, shows a page or types.
 2. **Translate:** the request becomes English if it is in Hindi. A short glossary fixes Hindi subject terms first, such as "भिन्न" for fraction.
 3. **Safety check:** patterns look for violence, self-harm, abuse, fear, adult content, hate and medical questions. A general knowledge question with nothing personal in it, such as "Why was sati banned?", goes straight on to retrieval. Everything else goes to the fine-tuned safety model. A flagged request gets a fixed, human-written reply and never reaches the answer model.
@@ -196,7 +198,7 @@ Pleias also made basic errors, such as adding fractions by multiplying numerator
 | Speaker | USB speaker | Chosen by name in the settings |
 | Case | 3D-printed, plug-in, desk use | [Specialist Case Spec](https://claude.ai/artifact/3D3fcDWkQKapE3nWWFvjEt), which needs updating now the microphone is on the camera's cable |
 
-The [architecture page](https://claude.ai/artifact/51MP5KDkXYxgQNbxFMDcLp) shows the request path and what runs where. Both pages are private until shared.
+The case spec page is private until shared.
 
 ## Run it
 
@@ -232,6 +234,7 @@ Install steps are in [module/README.md](module/README.md).
 | `module/`, `scripts/`, `tools/` | Device install, packaging and model downloads |
 | `training/` | How the safety model was fine-tuned and exported |
 | `tests/` | System integration and user acceptance tests, with no unit tests |
+| `docs/` | The architecture diagram |
 
 ## Licence
 
