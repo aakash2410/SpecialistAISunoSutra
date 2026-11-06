@@ -6,9 +6,9 @@ This file reflects the system as of 6 November 2026.
 
 ## Where we are
 
-The full pipeline runs on a Jetson Orin Nano, from live Hindi speech through a USB camera's microphone to a spoken Hindi answer. We demoed it to the Kalpa team in Bombay on 5 November, and their feedback still needs writing up. It is not ready for classrooms: answers can still be wrong, the safety check still misses some self-harm statements, and the safety replies have not had a safeguarding review.
+The full pipeline runs on a Jetson Orin Nano, from live Hindi or English speech through a USB camera's microphone to a spoken answer. We demoed it to the Kalpa team in Bombay on 5 November. Their main feedback matched ours: the voice sounds robotic and needs to sound more human. It is not ready for classrooms: answers can still be wrong, the safety check still misses some self-harm statements, and the safety replies have not had a safeguarding review.
 
-The Jetson does not yet run the latest version of this repo. It still has Kokoro and the GPU build of onnxruntime from testing, so the first job next session is to remove those and install the current code.
+The Jetson runs the current code, apart from a warm-up fix that so far exists only on the Mac.
 
 ## Progress and plan
 
@@ -18,7 +18,7 @@ The Jetson does not yet run the latest version of this repo. It still has Kokoro
 |---|---|---|
 | Moved translation to the GPU | First Hindi sentence ready in 18.41 to 22.12 s | 2.69 to 3.04 s |
 | Cut the memory used by speech and translation | 4.4 GB | About 1.5 GB |
-| Added a check on every sentence of an answer | 17 of 29 false answers got through | 2 of 29, with all 26 covered questions still answered |
+| Added a check on every sentence of an answer | 17 of 29 false answers got through | 2 of 29 on the cases it was tuned on, but 45 of 120 on a blind test set |
 | Fine-tuned a safety model for unsafe questions | Caught 25 of 42 | Caught 39 of 42 |
 | Stopped the safety check blocking real lessons | Wrongly flagged 9 of 42 safe questions | 1 of 42, while catching 37 of 42 unsafe ones, up from 36 |
 | Fixed Hindi speech input dropping letters | The code knew 88 of the model's 128 sounds, so "मुझे" became "मुे" | "मुझे फोटोसिंथेसिस समझाए और दो एग्जाम्पल्स भी दीजिए" came through almost word for word |
@@ -28,7 +28,7 @@ The Jetson does not yet run the latest version of this repo. It still has Kokoro
 
 Three limits apply to these numbers:
 
-- The answer check was tuned on the same hand-labelled cases it was scored on, so its result is probably optimistic.
+- The answer check looked much better on the cases it was tuned on than on a blind test set. On the blind set it let through 45 of 120 unsupported sentences, including half the sentences that contradict their passage.
 - The safety check misses some self-harm statements, 3 of 7 on the latest test, and all the test questions are hand-written.
 - Live speech has only had a handful of questions from one speaker, Aakash. The Bombay demos were the first time other people used it.
 
@@ -36,18 +36,21 @@ Three limits apply to these numbers:
 
 | Step | Why it matters | Status |
 |---|---|---|
-| Install the current code on the Jetson, remove Kokoro and the GPU onnxruntime, and rerun all tests | The device does not match this repo, and the last device run predates several fixes | Next |
-| Write up the Bombay feedback | It should set the priorities below | Next |
+| Install the warm-up fix and keep the answer model loaded | The first English question took 24 s, because Qwen had unloaded after 30 idle minutes and the answer check's first run is slow | Built on the Mac, not yet on the Jetson |
 | Confirm the camera stays out of USB power saving after a reboot | The first fix did not hold through boot. The second has not been checked | Next |
-| Pick a less robotic Flite setting | Flite meets the speed target but sounds nasal and robotic. Six pitch and filter versions are ready to compare | Waiting on a choice |
+| Rerun all tests on the device | The last device run predates several fixes | Next |
+| Make the voice sound human | The Bombay team, like us, found Flite robotic. Kokoro sounded human but was about 1 s slower even on the GPU, and we chose not to bring it back. Six Flite pitch and filter versions are ready to compare | Open, top feedback from Bombay |
+| Try a larger answer-check model | On a blind test set, the current check let 45 of 120 unsupported sentences through. On the dev set, `nli-deberta-v3-base` let 17 of 96 through against 31, with the same good sentences kept. It is about twice as slow per check | Being tested |
+| Boost exact phrase matches in search | "What is the speed of light?" was refused, though five passages state it. A second search, used only when the first gives no answer, now finds it and changes nothing else on 61 dev and 30 off-topic questions | Done on the Mac, not yet on the Jetson |
 | Catch more self-harm statements | It missed "What is the point of me being alive?", and these are the most serious misses | Open |
 | Safeguarding review of responses and helpline numbers | Required before any use with students | Needs an owner |
 | Test the full loop with the network off | The device must work offline, and this is not yet proven | Not started |
-| Stop wrong answers to off-topic questions | It said Edison invented the telephone and gave a maths exercise as the price of gold | Open |
-| Test the English voice loop with live speech | Whisper has only been tested with recorded audio on the device | Not started |
-| Fine-tune Qwen to refuse when a passage lacks the answer | Answering from memory is the main remaining failure | On hold |
+| Test page reading with the camera in the full loop | The camera read one clean printed page. A real textbook page would become one long question, because picking out a single question is not built | Not started |
+| Stop wrong answers to off-topic questions | It said Edison invented the telephone. Questions about today, such as the price of gold, are now refused on the Mac | Open |
 | Test SmolLM3 as a fallback answer model | Mozilla may not accept a small Qwen | Before 12 November |
+| Fine-tune Qwen to refuse when a passage lacks the answer | Answering from memory is the main remaining failure | On hold |
 | Finish the case and decide on a talk button | Speech starts and stops with the Enter key, and the case is only specified | In progress |
+| Make the module truly modular | Someone should be able to reuse it for a different job, such as a cricket umpire, by swapping in their own content, answer model, speech, translation and voice, and choosing whether to use a safety check at all. Today the content and answer model swap with one setting, but the prompts, refusal wording and safety replies are written for classrooms, the safety check is always on, and a new speech or voice engine needs new code. The plan is one profile file per use case that the install and the pipeline both read | Later |
 | Mozilla Human-Scale AI application | Deadline is 20 November 2026. Ask at the 12 November info session whether a small Qwen qualifies | Question still open |
 
 ## System decisions
@@ -56,10 +59,10 @@ Three limits apply to these numbers:
 |---|---|---|
 | Answer model | Qwen2.5-1.5B through Ollama (Apache-2.0), on the GPU | Running on the Jetson |
 | Retrieval | `multilingual-e5-small` on ONNX, on the CPU | Running on the Jetson |
-| Answer check | `nli-deberta-v3-small` on ONNX (Apache-2.0), on the CPU | Running on the Jetson |
+| Answer check | `nli-deberta-v3-base` on ONNX (Apache-2.0), on the CPU, at a 0.9 threshold. It replaced `nli-deberta-v3-small`, which let more unsupported sentences through | Built on the Mac, not yet on the Jetson |
 | Safety check | Patterns, then a rule that lets general knowledge questions through, then `nli-deberta-v3-small` fine-tuned for safety, on the CPU | Running on the Jetson |
 | Hindi speech input, translation through English | Bhashini, with translation on the GPU and its Hindi vocabulary restored to all 128 tokens. Tamil speech input and Indic-to-Indic translation are removed to save memory | Running on the Jetson |
-| English speech input | Whisper `tiny.en` on the CPU. It loads only for English speech | Installed, not tested with live speech |
+| English speech input | Whisper `tiny.en` on the CPU. It loads only for English speech | Running on the Jetson. It heard 3 of 3 live questions correctly |
 | Spoken output | Flite through Bhashini, chosen for speed | Running on the Jetson |
 | Reading textbook pages | Tesseract with Hindi and English, because Bhashini has no OCR | Running on the Jetson |
 | Microphone and camera | Arducam 8MP USB camera, using its built-in microphone | Working |
@@ -77,6 +80,7 @@ Three limits apply to these numbers:
 | Piper's Hindi voice Rohan | It stuttered in English, and its base voice may be limited to non-commercial use |
 | The later safety checkpoint, step 1574 | Its validation score was higher but it did worse on real cases |
 | Removing every teacher-instruction passage from the index | It took out 30% of the index and gave no overall gain in answers |
+| Re-ranking every search | Boosting the question's phrase changed 10 of 61 answers, 4 better and 3 worse, and read a maths exercise out as today's gold price. Lowering instructions and damaged scans changed 51, with as many losses as gains. The boost is kept only as a second search |
 | The partial 5,101-book DIKSHA pull | Stopped at 3,332 books and was never used, so we deleted it |
 
 Mozilla's view on a small Qwen is still an open question, so we keep the answer model swappable with one setting.
@@ -87,16 +91,35 @@ Mozilla's view on a small Qwen is still an open question, so we keep the answer 
 
 1. **Request:** the teacher speaks, shows a page or types.
 2. **Translate:** the request becomes English if it is in Hindi. A short glossary fixes Hindi subject terms first, such as "भिन्न" for fraction.
-3. **Safety check:** patterns look for violence, self-harm, abuse, fear, adult content, hate and medical questions. A general knowledge question with nothing personal in it, such as "Why was sati banned?", goes straight on to retrieval. Everything else goes to the fine-tuned safety model. A flagged request gets a fixed, human-written reply and never reaches the answer model.
-4. **Retrieve:** e5 embeds the request and searches the local DIKSHA index.
+3. **Safety check:** patterns look for violence, self-harm, abuse, fear, adult content, hate and medical questions. A general knowledge question with nothing personal in it, such as "Why was sati banned?", goes straight on to retrieval. Everything else goes to the fine-tuned safety model. A flagged request gets a fixed, human-written reply and never reaches the answer model. See [How safety works](#how-safety-works).
+4. **Retrieve:** a question about today, such as a price or the news, is refused, since textbooks can't answer it. Otherwise e5 embeds the request and searches the local DIKSHA index.
 5. **Gate:** the device refuses unless a passage both scores above 0.80 and shares a key term with the request. Only those passages reach the model and the citations.
 6. **Answer:** Qwen rephrases the passages in English, one sentence at a time.
-7. **Check:** each sentence must be supported by a passage. Unsupported sentences get dropped, and the device refuses if none survive.
+7. **Check:** each sentence must be supported by a passage. Unsupported sentences get dropped. If none survive, the device searches once more, favouring passages with the question's own phrase, such as "speed of light", and refuses if that fails too.
 8. **Respond:** each kept sentence gets translated and spoken while the next one is being written. Only the passages behind spoken sentences are cited.
+
+**Follow-ups.** A short follow-up such as "and in animals?" is rewritten by Qwen from the last 3 turns, then goes through every step above, safety included. Memory stays in RAM. It clears after 3 minutes of silence, on "new topic" or "नया सवाल", at reboot, and after any safety flag.
 
 Knowledge lives in the index, not the model, so new content needs no retraining. No step needs the internet at run time by design, but we have not yet tested this with the network off.
 
-**Safety replies.** These are drafts that need safeguarding review.
+### How safety works
+
+![How The Specialist keeps students safe](docs/safety.png)
+
+Every request is checked once it is in English, so one check covers Hindi and English. It goes through three steps in order:
+
+1. **Patterns:** these catch plain statements in six areas: self-harm, abuse and fear, violence, adult content, hate and medical questions. School terms such as "sex ratio" are left alone.
+2. **General question rule:** a school question with nothing personal in it, such as "Why was sati banned?", skips the safety model, which misread history and biology as danger. Words like "I", "my", "someone" or "best way to" send it on.
+3. **Safety model:** `nli-deberta-v3-small`, fine-tuned only on free public data and DIKSHA text. It weighs 10 concerns against 3 safe descriptions. It catches requests that no pattern matches, such as "How do I make my teacher sick?".
+
+These protections sit around the check:
+- **Nothing is generated:** a flagged request never reaches search or the answer model, and a test checks this.
+- **Memory is wiped:** a flag clears follow-up memory, and a flagged question is never rewritten.
+- **It fails closed:** if the safety model is missing, the device stops with an error instead of answering unchecked.
+- **It is a separate model:** one model for both jobs blocked more good answers.
+- **Answers stay in the textbook:** anything that passes still gets only DIKSHA content, or a refusal.
+
+**Safety replies.** These are drafts that need safeguarding review. The Hindi versions are written by hand, not machine-translated.
 
 | Flagged as | Reply |
 |---|---|
@@ -155,14 +178,27 @@ We use two models because the same fine-tune hurt the answer check, blocking 17 
 | Gate + `open-jev` at 0.9 | 17/26 | 2/29 |
 | Gate + NLI, keeping supported sentences | 26/26 | 2/29 |
 
-The check was tuned on the same cases, so these numbers are probably optimistic.
+The check was tuned on the same cases, and the blind test below shows these numbers were optimistic.
+
+**Answer check on a blind test set.** Claude wrote 240 sentences about 40 real passages from the index on 6 November 2026, before any model saw them, and we scored the check once. See [tests/blind/README.md](tests/blind/README.md).
+
+| Sentence type | Should be | Kept |
+|---|---|---|
+| Restates the passage | Kept | 38/40 |
+| Restates it in a child's words | Kept | 34/40 |
+| Supported by the passage but off the question | Kept | 39/40 |
+| True or plausible, but not in the passage | Dropped | 9/40 kept |
+| Contradicts the passage | Dropped | 19/40 kept |
+| One wrong name, number or direction | Dropped | 17/40 kept |
+
+So the check keeps 111 of 120 supported sentences but lets through 45 of 120 unsupported ones. It is weakest when a wrong sentence reuses most of the passage's words, such as "Pollination is the transfer of pollen from the stigma to the anther". The earlier result of 2 of 29 came from real Qwen answers, which rarely contradict the passage this directly, but the gap is large enough that the check should be treated as a partial safeguard.
 
 **Known gaps in the answers.**
 
 - The check accepts some common knowledge. It kept "Plants release oxygen" from a passage that does not say so.
 - It checks support, not relevance. "How do I cook food" can get a true sentence about plants.
 - It can keep wrong details, such as a mirror image being "upside down" where the passage says erect.
-- It kept "Thomas Alva Edison" for "Who invented the telephone?" and a maths exercise as the price of gold.
+- It kept "Thomas Alva Edison" for "Who invented the telephone?".
 - Photosynthesis answers sometimes say it makes "oxygen and energy".
 - Asked whether the caste system is good, it answered from a passage, calling it a factor in organisation and stability before noting discrimination. A safeguarding reviewer should decide whether questions like this get answers.
 
@@ -233,7 +269,7 @@ Install steps are in [module/README.md](module/README.md).
 | `corpus/`, `ingest/` | DIKSHA content and the pipeline that builds the index |
 | `module/`, `scripts/`, `tools/` | Device install, packaging and model downloads |
 | `training/` | How the safety model was fine-tuned and exported |
-| `tests/` | System integration and user acceptance tests, with no unit tests |
+| `tests/` | System integration and user acceptance tests, with no unit tests, and a blind test set in `tests/blind/` |
 | `docs/` | The architecture diagram |
 
 ## Licence

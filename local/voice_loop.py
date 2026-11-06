@@ -6,6 +6,7 @@ Give it a request in any of these ways:
   * a WAV file:      python -m local.voice_loop --in-lang hi --from-wav question.wav
   * a page image:    python -m local.voice_loop --in-lang hi --from-image page.jpg
   * typed text:      python -m local.voice_loop --text "What is photosynthesis?"
+                     (repeat --text to ask follow-ups in one session)
   * a USB mic:       python -m local.voice_loop --mic-device plughw:1,0
 
 Swap any component by name (contracts live in pocketinfer.specialist.providers):
@@ -85,6 +86,13 @@ class LoopHarness:
             mt=(lambda text, src, tgt: self.mt.translate(text, src, tgt)),
             tts=tts_cb,
         )
+        from pocketinfer.specialist.session import Session
+
+        self.session = Session()
+        # Only a real answer model can rewrite follow-ups; the extractive one would echo a passage.
+        self.rewrite_llm = self.engine.llm if args.llm == "ollama" else None
+        self._texts = list(args.text or [])
+        self._warm_up(args)
         print(
             f"[providers] asr={getattr(self.asr,'name','(none)')}  mt={self.mt.name}  "
             f"tts={getattr(self.tts_provider,'name','(off)')}  llm={args.llm}  "
@@ -94,9 +102,38 @@ class LoopHarness:
             print("[warn] input language is not English but MT is 'none' — the query "
                   "won't be translated before retrieval over the English corpus.")
 
+    def _warm_up(self, args) -> None:
+        """Run every part once before the first question, because first runs are slow.
+
+        On the Jetson the first question took 24 s: about 20 s for Ollama to load the
+        answer model and 2.4 s for the answer check's first run.
+        """
+        t0 = time.time()
+        steps = []
+        if args.llm == "ollama":
+            from pocketinfer.specialist.llm import preload_ollama_model
+
+            steps.append(("answer model", lambda: preload_ollama_model(args.ollama_model)))
+        steps.append(("retrieval", lambda: self.engine.embedder.embed_one("warm up", kind="query")))
+        steps.append(("answer check", lambda: self.engine.verifier.support_score("Plants make food.", "Plants make food.")))
+        steps.append(("safety model", lambda: self.engine.safety.verifier.support_score("I feel fine.", "I feel fine.")))
+        if self.in_lang != "en" or self.out_lang != "en":
+            steps.append(("translation", lambda: self.mt.translate("Plants make food.", "en", "hi")))
+        if self.asr is not None:
+            from pocketinfer.specialist.providers import AudioClip
+
+            silence = AudioClip(pcm=b"\0\0" * 16000, sample_rate=16000)
+            steps.append(("speech input", lambda: self.asr.transcribe(silence, self.in_lang)))
+        for name, step in steps:
+            try:
+                step()
+            except Exception as e:  # noqa: BLE001
+                print(f"[warn] could not warm up the {name} ({e})")
+        print(f"[ready] warmed up in {time.time() - t0:.1f} s")
+
     def _capture_text(self, mic) -> str:
         if self.args.text:
-            return self.args.text
+            return self._texts.pop(0) if self._texts else ""
         t0 = time.time()
         if self.args.from_image:
             from pocketinfer.models.ocr import Ocr
@@ -132,11 +169,23 @@ class LoopHarness:
         if not raw:
             print("[skip] nothing heard.")
             return False
+        if self.session.is_reset(raw):
+            self.session.clear()
+            print("[session] new topic, earlier questions forgotten")
+            return True
         query_en = self._translate_query(raw, T)
+        if self.session.is_reset(query_en):
+            self.session.clear()
+            print("[session] new topic, earlier questions forgotten")
+            return True
 
         header = {"printed": False}
 
         def on_sentence(sr):
+            if not header.get("rewrite") and self.session.last_rewrite:
+                print(f"[follow] ({self.session.last_rewrite_seconds*1000:.0f}ms) understood as: "
+                      f"{self.session.last_rewrite!r}")
+                header["rewrite"] = True
             if sr.timings:
                 print(f"[steps] {_fmt_timings(sr.timings)}")
             if sr.refused:
@@ -151,8 +200,10 @@ class LoopHarness:
 
         speaking = self.tts_provider is not None
         play_fn = play_wav_bytes if speaking else (lambda _b: None)
+        from pocketinfer.specialist.session import ask
+
         results, first_audio = speak_stream(
-            self.engine.stream_answer(query_en, target_language=self.out_lang),
+            ask(self.engine, self.session, query_en, self.out_lang, llm=self.rewrite_llm),
             play_fn, on_sentence,
         )
 
@@ -166,7 +217,11 @@ class LoopHarness:
     def run(self):
         once = self.run_once
         # Single-shot input modes.
-        if self.args.text or self.args.from_image:
+        if self.args.text:
+            for _ in self.args.text:
+                once(None)
+            return
+        if self.args.from_image:
             once(None)
             return
         if self.args.from_wav:
@@ -190,7 +245,8 @@ class LoopHarness:
 def main():
     ap = argparse.ArgumentParser(description="Specialist voice loop.")
     # input modes
-    ap.add_argument("--text", default=None, help="skip ASR: use this text as the request")
+    ap.add_argument("--text", action="append", default=None,
+                    help="skip ASR: use this text as the request; repeat it to ask follow-ups")
     ap.add_argument("--from-wav", default=None, help="use a WAV file as the spoken request")
     ap.add_argument("--from-image", default=None, help="read the request from a page image (OCR)")
     ap.add_argument("--mic-device", default=os.environ.get("SPECIALIST_MIC_DEVICE", "plughw:1,0"),

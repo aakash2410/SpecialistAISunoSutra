@@ -6,10 +6,12 @@ embed -> retrieve -> ground -> LLM -> MT, lives here.
 
     request (text from ASR or OCR)
         -> Embed.embed_one(query)
-        -> VectorIndex.search(top_k)
+        -> refuse questions about live information ("the price of gold today")
+        -> VectorIndex.search, keep the best top_k
         -> build_grounding (refuse if not covered)
         -> LLM (grounded; may also refuse)
         -> Verifier (keep only sentences an approved passage supports)
+        -> if that refused, one more try on re-ranked passages (see rerank.rescue)
         -> MT into target language
     => AnswerResult (text + citations + timings [+ audio if a TTS client is given])
 
@@ -22,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import queue
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -32,10 +35,12 @@ from ..models.verify import Verifier
 from .grounding import (
     REFUSAL_TEXT,
     build_grounding,
+    classify_intent,
     clean_answer,
     is_refusal_response,
     iter_sentences,
 )
+from .rerank import CANDIDATES, load_vocabulary, rescue
 from .safety import SafetyCheck, load_safety_model
 from .vector_index import Retrieved, VectorIndex
 
@@ -51,6 +56,20 @@ MTClient = Callable[[str, str, str], str]
 TTSClient = Callable[[str, str], bytes]
 
 _UNSUPPORTED_REASON = "No sentence of the answer was supported by the approved passages."
+_LIVE_REASON = "Asks for live information, which textbooks cannot give."
+
+# Textbooks cannot say what is true today, and a maths problem about the price of gold
+# would otherwise be read out as today's price. "Current" alone is left out, since
+# electric current is a textbook topic.
+_LIVE = re.compile(
+    r"\b(today|today's|tonight|tomorrow|yesterday|right now|currently|at the moment|"
+    r"latest|this (?:week|month|year))\b",
+    re.IGNORECASE,
+)
+
+
+def asks_for_live_information(request: str) -> bool:
+    return bool(_LIVE.search(request or ""))
 
 
 @dataclass
@@ -106,6 +125,7 @@ class SpecialistEngine:
         safety_model: Optional[Verifier] = None,
     ):
         self.index = VectorIndex(index_dir)
+        self.vocabulary = load_vocabulary(index_dir)
         self.verifier = verifier or Verifier()
         self.safety = SafetyCheck(safety_model or load_safety_model())
         self.embedder = embedder or Embed(model_name=self.index.embedder_name or DEFAULT_MODEL_NAME)
@@ -137,8 +157,15 @@ class SpecialistEngine:
         the streaming voice loop). ``g.refused`` means the retrieval gate blocked
         it; otherwise use ``g.system_prompt`` / ``g.user_prompt``.
         """
+        return self._ground(request, self._search(request)[:self.top_k])
+
+    def _search(self, request: str) -> List[Retrieved]:
+        """The top candidates in search order: the first top_k are the plain result,
+        and the rest are kept for a rescue."""
         qvec = self.embedder.embed_one(request, kind="query")
-        passages = self.index.search(qvec, top_k=self.top_k)
+        return self.index.search(qvec, top_k=max(CANDIDATES, self.top_k))
+
+    def _ground(self, request: str, passages: List[Retrieved]):
         kwargs = {} if self.min_score is None else {"min_score": self.min_score}
         return build_grounding(request, passages, **kwargs)
 
@@ -194,47 +221,60 @@ class SpecialistEngine:
                                  reason=f"safety: {flag.category} ({flag.source})", timings=steps)
             return
 
-        g = self.prepare(request)
-        _mark("retrieve")
-        if g.refused:
-            yield _refusal(g.reason)
+        if asks_for_live_information(request):
+            yield _refusal(_LIVE_REASON)
             return
 
-        if self.stream_llm is not None:
-            chunks = self.stream_llm(g.system_prompt, g.user_prompt)
-        else:
-            chunks = iter([self.llm(g.system_prompt, g.user_prompt)])
+        def _attempt(passages):
+            """Yield the supported sentences; return a refusal reason if there were none.
+            Nothing is yielded before the first supported sentence, so a refused attempt
+            can be retried without the listener hearing anything."""
+            g = self._ground(request, passages)
+            _mark("retrieve")
+            if g.refused:
+                return g.reason
+            if self.stream_llm is not None:
+                chunks = self.stream_llm(g.system_prompt, g.user_prompt)
+            else:
+                chunks = iter([self.llm(g.system_prompt, g.user_prompt)])
+            idx = 0
+            cited = set()
+            for i, sentence in enumerate(iter_sentences(chunks)):
+                _mark("llm")
+                if i == 0 and is_refusal_response(sentence):
+                    return "LLM reported no answer in source"
+                text = clean_answer(sentence)
+                if not text:
+                    continue
+                source = self.verifier.supporting_passage(text, g.passages)
+                _mark("check")
+                if source is None:
+                    logger.info("Dropped an unsupported sentence: %s", text)
+                    continue
+                citation = source.citation()
+                new_citations = [] if citation in cited else [citation]
+                cited.add(citation)
+                loc = _localize(text)
+                _mark("mt")
+                audio = _audio(loc)
+                _mark("tts")
+                yield SentenceResult(
+                    index=idx, text_en=text, text_localized=loc, audio=audio,
+                    citations=new_citations, timings=dict(steps) if idx == 0 else {},
+                )
+                clock[0] = time.time()
+                idx += 1
+            return None if idx else _UNSUPPORTED_REASON
 
-        idx = 0
-        cited = set()
-        for i, sentence in enumerate(iter_sentences(chunks)):
-            _mark("llm")
-            if i == 0 and is_refusal_response(sentence):
-                yield _refusal("LLM reported no answer in source")
-                return
-            text = clean_answer(sentence)
-            if not text:
-                continue
-            source = self.verifier.supporting_passage(text, g.passages)
-            _mark("check")
-            if source is None:
-                logger.info("Dropped an unsupported sentence: %s", text)
-                continue
-            citation = source.citation()
-            new_citations = [] if citation in cited else [citation]
-            cited.add(citation)
-            loc = _localize(text)
-            _mark("mt")
-            audio = _audio(loc)
-            _mark("tts")
-            yield SentenceResult(
-                index=idx, text_en=text, text_localized=loc, audio=audio,
-                citations=new_citations, timings=dict(steps) if idx == 0 else {},
-            )
-            clock[0] = time.time()
-            idx += 1
-        if idx == 0:
-            yield _refusal(_UNSUPPORTED_REASON)
+        candidates = self._search(request)
+        reason = yield from _attempt(candidates[:self.top_k])
+        if reason is not None:
+            retry = rescue(request, candidates, self.top_k, self.vocabulary)
+            if retry is not None:
+                logger.info("Retrying on re-ranked passages after: %s", reason)
+                reason = yield from _attempt(retry)
+        if reason is not None:
+            yield _refusal(reason)
 
     def _localize_flag(self, flag, target_language: str) -> str:
         """Use the human-written text where there is one; translate only as a fallback."""
@@ -267,51 +307,29 @@ class SpecialistEngine:
             t["total"] = time.time() - t0
             return result
 
-        t0 = time.time()
-        qvec = self.embedder.embed_one(request, kind="query")
-        t["embed"] = time.time() - t0
-
-        ts = time.time()
-        passages = self.index.search(qvec, top_k=self.top_k)
-        t["retrieve"] = time.time() - ts
-
-        kwargs = {} if self.min_score is None else {"min_score": self.min_score}
-        g = build_grounding(request, passages, **kwargs)
-
-        if g.refused:
-            return self._finalize_refusal(request, target_language, g, passages, t)
-
-        ts = time.time()
-        llm_text = self.llm(g.system_prompt, g.user_prompt).strip()
-        t["llm"] = time.time() - ts
-
-        # Generation gate: the model says the sources don't cover it.
-        if is_refusal_response(llm_text):
-            snippet = (llm_text or "").strip()[:100] or "(empty response)"
-            g.reason = f"LLM reported insufficient information (said: {snippet!r})."
-            return self._finalize_refusal(request, target_language, g, passages, t)
-
-        # Keep only what an approved passage supports, and cite only those passages.
-        ts = time.time()
-        kept, citations, dropped = [], [], []
-        for sentence in iter_sentences([llm_text]):
-            # Strip any leaked refusal note the model appended to a valid answer.
-            text = clean_answer(sentence)
-            if not text:
-                continue
-            source = self.verifier.supporting_passage(text, g.passages)
-            if source is None:
-                dropped.append(text)
-                continue
-            kept.append(text)
-            if source.citation() not in citations:
-                citations.append(source.citation())
-        t["verify"] = time.time() - ts
-        if not kept:
-            g.reason = _UNSUPPORTED_REASON
-            result = self._finalize_refusal(request, target_language, g, passages, t)
-            result.dropped_sentences = dropped
+        if asks_for_live_information(request):
+            result = self._finalize_refusal(request, target_language, classify_intent(request),
+                                            _LIVE_REASON, [], t)
+            t["total"] = time.time() - t0
             return result
+
+        ts = time.time()
+        candidates = self._search(request)
+        t["retrieve"] = time.time() - ts
+        passages = candidates[:self.top_k]
+        g, kept, citations, dropped = self._try_passages(request, passages, t)
+        if not kept:
+            retry = rescue(request, candidates, self.top_k, self.vocabulary)
+            if retry is not None:
+                logger.info("Retrying on re-ranked passages after: %s", g.reason)
+                passages = retry
+                g, kept, citations, dropped = self._try_passages(request, passages, t)
+        if not kept:
+            result = self._finalize_refusal(request, target_language, g.intent, g.reason, passages, t)
+            result.dropped_sentences = dropped
+            t["total"] = time.time() - t0
+            return result
+
         llm_text = " ".join(kept)
         answer_localized = llm_text
         if self.mt and target_language and target_language.lower() != "en":
@@ -338,7 +356,45 @@ class SpecialistEngine:
         t["total"] = time.time() - t0
         return result
 
-    def _finalize_refusal(self, request, target_language, g, passages, t) -> AnswerResult:
+    def _try_passages(self, request: str, passages: List[Retrieved], t: dict):
+        """Ground, generate and check one set of passages. Returns the grounding, the
+        supported sentences, their citations and the dropped sentences. No supported
+        sentences means a refusal, with the reason in the grounding."""
+        g = self._ground(request, passages)
+        if g.refused:
+            return g, [], [], []
+
+        ts = time.time()
+        llm_text = self.llm(g.system_prompt, g.user_prompt).strip()
+        t["llm"] = t.get("llm", 0.0) + time.time() - ts
+
+        # Generation gate: the model says the sources don't cover it.
+        if is_refusal_response(llm_text):
+            snippet = (llm_text or "").strip()[:100] or "(empty response)"
+            g.reason = f"LLM reported insufficient information (said: {snippet!r})."
+            return g, [], [], []
+
+        # Keep only what an approved passage supports, and cite only those passages.
+        ts = time.time()
+        kept, citations, dropped = [], [], []
+        for sentence in iter_sentences([llm_text]):
+            # Strip any leaked refusal note the model appended to a valid answer.
+            text = clean_answer(sentence)
+            if not text:
+                continue
+            source = self.verifier.supporting_passage(text, g.passages)
+            if source is None:
+                dropped.append(text)
+                continue
+            kept.append(text)
+            if source.citation() not in citations:
+                citations.append(source.citation())
+        t["verify"] = t.get("verify", 0.0) + time.time() - ts
+        if not kept:
+            g.reason = _UNSUPPORTED_REASON
+        return g, kept, citations, dropped
+
+    def _finalize_refusal(self, request, target_language, intent, reason, passages, t) -> AnswerResult:
         localized = REFUSAL_TEXT
         if self.mt and target_language and target_language.lower() != "en":
             try:
@@ -347,17 +403,16 @@ class SpecialistEngine:
                 pass
         result = AnswerResult(
             refused=True,
-            intent=g.intent,
+            intent=intent,
             request=request,
             target_language=target_language,
             answer_en=REFUSAL_TEXT,
             answer_localized=localized,
-            reason=g.reason,
+            reason=reason,
             passages=passages,
             timings=t,
         )
         self._maybe_tts(result)
-        t["total"] = sum(v for k, v in t.items() if k != "total")
         return result
 
     def _maybe_tts(self, result: AnswerResult):

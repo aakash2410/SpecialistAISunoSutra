@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import collections
 import re
-from typing import List, Optional, Tuple
+from typing import List, Optional, Set, Tuple
 
 _COMMON_WORDS = set(
     "the of and to in is a for that are it on with as this be by we an or from have "
@@ -113,14 +113,21 @@ def _is_garbled(text: str, vocabulary: set) -> bool:
     return not words or sum(w in _COMMON_WORDS for w in words) / len(words) < _MIN_COMMON_SHARE_IF_UNRECOGNISED
 
 
-def clean_chunks(chunks: List[dict]) -> Tuple[List[dict], dict]:
-    """Drop passages a teacher's question should not land on. Returns (kept, counts)."""
+def english_vocabulary(chunks: List[dict]) -> Set[str]:
+    """Words that appear in at least 8 books, which scan damage rarely produces."""
     words_in_book = collections.defaultdict(set)
     for chunk in chunks:
         words_in_book[_book(chunk)].update(_long_words(chunk["text"]))
+    if len(words_in_book) < _GARBLE_CHECK_MIN_BOOKS:
+        return set()
     books_with_word = collections.Counter(w for words in words_in_book.values() for w in words)
-    vocabulary = {w for w, books in books_with_word.items() if books >= _VOCABULARY_MIN_BOOKS}
-    check_garble = len(words_in_book) >= _GARBLE_CHECK_MIN_BOOKS
+    return {w for w, books in books_with_word.items() if books >= _VOCABULARY_MIN_BOOKS}
+
+
+def clean_chunks(chunks: List[dict]) -> Tuple[List[dict], dict]:
+    """Drop passages a teacher's question should not land on. Returns (kept, counts)."""
+    vocabulary = english_vocabulary(chunks)
+    check_garble = bool(vocabulary)
 
     kept: List[dict] = []
     counts: collections.Counter = collections.Counter()

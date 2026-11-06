@@ -33,7 +33,8 @@ sys.path.insert(0, os.path.join(_ROOT, "python"))
 
 from ingest.chunk import chunk_documents  # noqa: E402
 from ingest.diksha_pull import load_local  # noqa: E402
-from ingest.page_quality import clean_chunks  # noqa: E402
+from ingest.page_quality import clean_chunks, english_vocabulary  # noqa: E402
+from pocketinfer.specialist.rerank import write_vocabulary  # noqa: E402
 from pocketinfer.models.embed import DEFAULT_MODEL_NAME, RECOMMENDED_MIN_SCORE, Embed  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,8 @@ def build(corpus_dir: str, model_name: str, max_words: int, overlap: int):
     with open(os.path.join(index_dir, "chunks.jsonl"), "w", encoding="utf-8") as f:
         for c in chunks:
             f.write(json.dumps(c, ensure_ascii=False) + "\n")
+    # Search re-ranking uses this to spot damaged scans.
+    write_vocabulary(index_dir, english_vocabulary(chunks))
 
     manifest = {
         "embedder": model_name,

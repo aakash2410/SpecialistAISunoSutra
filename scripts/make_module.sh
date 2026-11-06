@@ -14,7 +14,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="$ROOT/dist/specialist-module"
 PKG="$ROOT/python/pocketinfer"
 E5="$ROOT/local/models/multilingual-e5-small-onnx"
-VERIFIER="$ROOT/local/models/nli-deberta-v3-small-onnx"
+VERIFIER="$ROOT/local/models/nli-deberta-v3-base-onnx"
 SAFETY="$ROOT/local/models/nli-safety-onnx"
 VERSION="$(date +%Y.%m.%d)"
 

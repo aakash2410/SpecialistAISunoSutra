@@ -18,12 +18,11 @@ logger = logging.getLogger(__name__)
 
 def ollama_grounded_client(model_name: str, num_predict: int = 128,
                            timeout: float = 90.0, temperature: float = 0.0,
-                           keep_alive="30m"):
+                           keep_alive=-1):
     """Build a grounded LLM client backed by the on-device Ollama model.
 
-    ``keep_alive`` keeps the model resident between queries so only the first
-    query pays the load cost ('-1' = keep loaded indefinitely; a duration like
-    '30m' balances responsiveness against RAM on a memory-tight device).
+    ``keep_alive=-1`` keeps the model loaded for good. With a 30 minute limit, the first
+    question after a quiet spell waited about 20 s for the model to load again.
     """
     import ollama
 
@@ -49,7 +48,7 @@ def ollama_grounded_client(model_name: str, num_predict: int = 128,
 
 def ollama_grounded_stream_client(model_name: str, num_predict: int = 128,
                                   timeout: float = 90.0, temperature: float = 0.0,
-                                  keep_alive="30m"):
+                                  keep_alive=-1):
     """Streaming variant: returns (system, user) -> iterator of text chunks.
 
     Lets the caller assemble sentences and pipeline MT/TTS as the model generates,
@@ -77,3 +76,10 @@ def ollama_grounded_stream_client(model_name: str, num_predict: int = 128,
                 yield chunk["message"]["content"]
 
     return _client
+
+
+def preload_ollama_model(model_name: str, timeout: float = 120.0) -> None:
+    """Load the answer model now and keep it loaded, so the first question is not slow."""
+    import ollama
+
+    ollama.Client(timeout=timeout).generate(model=model_name, prompt="", keep_alive=-1)

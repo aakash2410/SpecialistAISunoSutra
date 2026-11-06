@@ -19,6 +19,7 @@ local/models/
 # Training data, weights and logs
 training/data/
 training/runs/
+training/base/
 training/*.log
 
 # Device-specific

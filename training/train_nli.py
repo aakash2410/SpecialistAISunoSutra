@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Fine-tune nli-deberta-v3-small on the data from build_nli_data.py.
+"""Fine-tune an NLI model on the data from build_nli_data.py. The safety model came from
+nli-deberta-v3-small. Pass --base to start from another, such as the answer check's
+nli-deberta-v3-base.
 
 AdamW with a cosine learning-rate schedule and a short warm-up, at a low rate because
 the base model is already good at general entailment and only needs nudging. A share of
@@ -75,6 +77,7 @@ def main() -> int:
     ap.add_argument("--warmup", type=float, default=0.05)
     ap.add_argument("--max-steps", type=int, default=0, help="stop early, for a smoke test")
     ap.add_argument("--seed", type=int, default=17)
+    ap.add_argument("--base", default=BASE, help="model to start from, a Hugging Face name or a local folder")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
@@ -83,8 +86,8 @@ def main() -> int:
     train, val = split(rows, args.seed)
     print(f"{len(train)} train, {len(val)} validation, device {device}", flush=True)
 
-    tok = AutoTokenizer.from_pretrained(BASE)
-    model = AutoModelForSequenceClassification.from_pretrained(BASE).to(device)
+    tok = AutoTokenizer.from_pretrained(args.base)
+    model = AutoModelForSequenceClassification.from_pretrained(args.base).to(device)
     acc, per = evaluate(model, tok, val, device)
     print(f"before training: validation accuracy {acc:.3f} {per}", flush=True)
 

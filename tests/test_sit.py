@@ -197,6 +197,44 @@ def test_streaming_drops_unsupported_sentences_before_speech(make_engine):
     assert results[0].citations
 
 
+# ------------------------------------------------------------ follow-up questions
+def test_follow_up_is_rewritten_from_memory_then_answered_like_any_question(make_engine):
+    from pocketinfer.specialist.session import Session, ask
+
+    engine = make_engine(llm=lambda system, user: SUPPORTED)
+    session = Session()
+    seen = []
+
+    def rewrite(system, user):
+        seen.append(user)
+        return "Rewritten question: How do green plants make their own food?"
+
+    first = list(ask(engine, session, "What is photosynthesis?", llm=rewrite))
+    assert seen == [] and first[0].text_en == SUPPORTED
+    second = list(ask(engine, session, "How does it work?", llm=rewrite))
+    assert "Q: What is photosynthesis?" in seen[0] and SUPPORTED in seen[0]
+    assert session.last_rewrite == "How do green plants make their own food?"
+    assert second[0].text_en == SUPPORTED and second[0].citations
+
+
+def test_memory_clears_after_silence_on_reset_and_after_a_safety_flag(make_engine):
+    from pocketinfer.specialist.session import Session, ask
+
+    now = [0.0]
+    engine = make_engine(llm=lambda system, user: SUPPORTED)
+    session = Session(clock=lambda: now[0])
+    list(ask(engine, session, "What is photosynthesis?"))
+    assert len(session.turns) == 1
+    now[0] += 181
+    session.expire_if_idle()
+    assert not session.turns
+
+    list(ask(engine, session, "What is photosynthesis?"))
+    flagged = list(ask(engine, session, "I want to kill myself"))
+    assert flagged[0].reason.startswith("safety:") and not session.turns
+    assert Session.is_reset("New topic.") and Session.is_reset("नया सवाल") and not Session.is_reset("What is a new topic?")
+
+
 def test_streaming_refuses_when_nothing_survives(make_engine):
     results = list(make_engine(llm=lambda system, user: INVENTED).stream_answer("What is photosynthesis?"))
     assert len(results) == 1
@@ -210,6 +248,73 @@ def test_only_the_passage_behind_the_answer_is_cited(make_engine):
     assert result.answer_en == answer
     assert len(result.citations) == 1
     assert "Photosynthesis" in result.citations[0]
+
+
+# ------------------------------------------------------------------ search
+SPEED = "The speed of light is about 300,000 kilometres per second."
+
+
+def _light_search(*args, **kwargs):
+    """Three close passages that only mention light, then the one that answers."""
+    from pocketinfer.specialist.vector_index import Retrieved
+
+    def passage(score, text, page):
+        return Retrieved(score, text, "do_light", "Light", "Light", page, "test")
+
+    return [
+        passage(0.90, "Light travels in a straight line. Shadows form when light is blocked.", 1),
+        passage(0.89, "A mirror reflects light. The image in a plane mirror is upright.", 2),
+        passage(0.89, "Light from the Sun has seven colours, which a prism can separate.", 3),
+        passage(0.87, SPEED + " Nothing travels faster.", 4),
+    ]
+
+
+def _answers_only_from_the_speed_passage(system, user):
+    from pocketinfer.specialist.grounding import REFUSAL_SENTINEL
+    return SPEED if "300,000" in system else REFUSAL_SENTINEL
+
+
+def test_a_refused_question_is_retried_once_on_the_passage_with_its_phrase(make_engine):
+    calls = []
+
+    def llm(system, user):
+        calls.append(system)
+        return _answers_only_from_the_speed_passage(system, user)
+
+    engine = make_engine(llm=llm)
+    engine.index.search = _light_search
+    result = engine.answer("What is the speed of light?")
+    assert not result.refused and result.answer_en == SPEED
+    assert len(calls) == 2 and "300,000" not in calls[0]
+    engine.llm = _answers_only_from_the_speed_passage
+    streamed = list(engine.stream_answer("What is the speed of light?"))
+    assert [s.text_en for s in streamed] == [SPEED]
+
+
+def test_no_retry_when_re_ranking_finds_nothing_new_with_the_phrase(make_engine):
+    calls = []
+
+    def llm(system, user):
+        calls.append(user)
+        from pocketinfer.specialist.grounding import REFUSAL_SENTINEL
+        return REFUSAL_SENTINEL
+
+    engine = make_engine(llm=llm)
+    engine.index.search = _light_search
+    assert engine.answer("Why do shadows form behind objects?").refused
+    assert len(calls) == 1
+
+
+def test_questions_about_today_are_refused_before_search(make_engine):
+    from pocketinfer.specialist.pipeline import asks_for_live_information
+
+    engine = make_engine(llm=_must_not_run, stream_llm=_must_not_run)
+    engine.index.search = _must_not_run
+    for question in ("What is the price of gold today?", "Who is the latest prime minister?"):
+        assert engine.answer(question).refused
+        streamed = list(engine.stream_answer(question))
+        assert len(streamed) == 1 and streamed[0].refused
+    assert not asks_for_live_information("What is electric current?")
 
 
 # ------------------------------------------------------------- safety check

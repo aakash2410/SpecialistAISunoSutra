@@ -1,0 +1,61 @@
+{"question": "What is an integer?", "reference": "Integers are the whole numbers together with their negatives, such as -3, -2, -1, 0, 1, 2 and 3."}
+{"question": "How do you add two fractions?", "reference": "To add two fractions, first make their denominators the same, then add the numerators."}
+{"question": "How do you multiply decimals?", "reference": "Multiply decimal numbers as whole numbers, then place the decimal point so the product has as many decimal places as both numbers together."}
+{"question": "What is the mean of a set of numbers?", "reference": "The mean is the sum of all the observations divided by the number of observations."}
+{"question": "What is the median?", "reference": "The median is the middle value of the data when it is arranged in order."}
+{"question": "What is a simple equation?", "reference": "An equation is a condition on a variable that says two expressions are equal."}
+{"question": "What is a transversal?", "reference": "A transversal is a line that intersects two or more lines at distinct points."}
+{"question": "What are vertically opposite angles?", "reference": "When two lines intersect, the vertically opposite angles formed are equal."}
+{"question": "What is the sum of the angles of a triangle?", "reference": "The sum of the three angles of a triangle is 180 degrees."}
+{"question": "What is the Pythagoras property?", "reference": "In a right-angled triangle, the square on the hypotenuse equals the sum of the squares on the other two sides."}
+{"question": "What is a rational number?", "reference": "A rational number is a number that can be written as p/q, where p and q are integers and q is not zero."}
+{"question": "What is simple interest?", "reference": "Simple interest is the extra money paid on borrowed money, found from the principal, the rate and the time."}
+{"question": "How do you convert a fraction to a percentage?", "reference": "To convert a fraction to a percentage, multiply it by 100."}
+{"question": "What is a monomial?", "reference": "An expression with only one term is called a monomial."}
+{"question": "What are like terms?", "reference": "Terms with the same algebraic factors are called like terms."}
+{"question": "What is the law of exponents for multiplication?", "reference": "When powers with the same base are multiplied, their exponents are added."}
+{"question": "What is line symmetry?", "reference": "A figure has line symmetry if a line divides it into two parts that match exactly when folded."}
+{"question": "What is the area of a circle?", "reference": "The area of a circle is pi times the radius times the radius."}
+{"question": "What is the perimeter of a rectangle?", "reference": "The perimeter of a rectangle is twice the sum of its length and breadth."}
+{"question": "What is a net of a cube?", "reference": "A net of a cube is a flat shape of six squares that can be folded to make a cube."}
+{"question": "What is photosynthesis?", "reference": "Photosynthesis is the process by which green plants make food from carbon dioxide and water using sunlight and chlorophyll."}
+{"question": "What is an autotroph?", "reference": "Organisms that make their own food are called autotrophs."}
+{"question": "How do amoebae eat?", "reference": "Amoeba pushes out pseudopodia around a food particle and engulfs it in a food vacuole."}
+{"question": "What is digestion?", "reference": "Digestion is the breakdown of complex food into simpler substances."}
+{"question": "What is conduction?", "reference": "Conduction is the transfer of heat from the hotter part of an object to its colder part."}
+{"question": "What is convection?", "reference": "Convection is the transfer of heat by the movement of a heated liquid or gas."}
+{"question": "What is an acid?", "reference": "Acids are substances that taste sour and turn blue litmus red."}
+{"question": "What is neutralisation?", "reference": "The reaction between an acid and a base is called neutralisation, and it forms a salt and water."}
+{"question": "What is rusting?", "reference": "Rusting is the formation of a brown coating on iron when it reacts with oxygen and water."}
+{"question": "What is crystallisation?", "reference": "Crystallisation is a process that gives large crystals of a pure substance from its solution."}
+{"question": "What is aerobic respiration?", "reference": "Aerobic respiration is the breakdown of food using oxygen to release energy."}
+{"question": "How does the heart pump blood?", "reference": "The heart's chambers contract and relax to pump blood around the body."}
+{"question": "What is transpiration?", "reference": "Transpiration is the loss of water as vapour from the leaves of plants."}
+{"question": "What is pollination?", "reference": "Pollination is the transfer of pollen from the anther to the stigma of a flower."}
+{"question": "What is a vegetative propagation?", "reference": "Vegetative propagation is when new plants grow from parts such as the stem, root, leaf or bud instead of seeds."}
+{"question": "What is the speed of an object?", "reference": "Speed is the distance an object covers in a unit of time."}
+{"question": "What is a simple pendulum?", "reference": "A simple pendulum is a small heavy bob hanging from a thread fixed at one end."}
+{"question": "What is an electromagnet?", "reference": "An electromagnet is a coil of wire around an iron piece that becomes a magnet when current flows through it."}
+{"question": "What is a fuse?", "reference": "A fuse is a safety device with a wire that melts and breaks the circuit when too much current flows."}
+{"question": "What is a concave mirror?", "reference": "A concave mirror is a spherical mirror whose reflecting surface curves inwards."}
+{"question": "What is sewage?", "reference": "Sewage is liquid waste water from homes, industries and other places."}
+{"question": "Why are forests important?", "reference": "Forests provide oxygen, food and shelter, protect the soil and help bring rain."}
+{"question": "Who were the Mughals?", "reference": "The Mughals were rulers who built an empire in India."}
+{"question": "What was the Vijayanagara empire?", "reference": "Vijayanagara was a kingdom in south India founded in the fourteenth century."}
+{"question": "Who was Akbar?", "reference": "Akbar was a Mughal emperor."}
+{"question": "What was the Bhakti movement?", "reference": "The Bhakti movement taught personal devotion to God."}
+{"question": "What is a tributary?", "reference": "A tributary is a river or stream that flows into a larger river."}
+{"question": "What is the atmosphere made of?", "reference": "The atmosphere is a layer of gases, mainly nitrogen and oxygen, around the earth."}
+{"question": "What are the layers of the earth?", "reference": "The earth has three layers: the crust, the mantle and the core."}
+{"question": "What is democracy?", "reference": "Democracy is a form of government in which people choose their rulers by voting."}
+{"question": "What is the role of the media?", "reference": "The media gives people news and information and shapes what they think about issues."}
+{"question": "What is a market?", "reference": "A market is a place where buyers and sellers exchange goods and services."}
+{"question": "What is a tropical rainforest?", "reference": "Tropical rainforests are hot, wet forests near the equator with heavy rain all year."}
+{"question": "What is weather?", "reference": "Weather is the state of the atmosphere at a place and time, such as its temperature, rain and wind."}
+{"question": "What is gender equality?", "reference": "Gender equality means women and men have the same rights and opportunities."}
+{"question": "What is a noun?", "reference": "A noun is a word that names a person, place, thing or idea."}
+{"question": "What is an adjective?", "reference": "An adjective is a word that describes a noun."}
+{"question": "What is the past tense?", "reference": "The past tense shows an action that has already happened."}
+{"question": "What is personification?", "reference": "Personification gives human qualities to things that are not human."}
+{"question": "What is a simile?", "reference": "A simile compares two things using 'like' or 'as'."}
+{"question": "What is the speed of light?", "reference": "The speed of light is about 300,000,000 metres per second."}

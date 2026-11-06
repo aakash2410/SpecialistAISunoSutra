@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Download the answer verifier (nli-deberta-v3-small, quantised for ARM) + tokenizer.
+"""Download the answer verifier (nli-deberta-v3-base, quantised for ARM) + tokenizer.
 
 Run this once, online. The files then sit on local storage for fully offline use.
 
     python3 tools/fetch_onnx_verifier.py
-    python3 tools/fetch_onnx_verifier.py --dest /opt/specialist/models/nli-deberta-v3-small-onnx
+    python3 tools/fetch_onnx_verifier.py --dest /opt/specialist/models/nli-deberta-v3-base-onnx
 
-Default dest is local/models/nli-deberta-v3-small-onnx, which the Verifier finds
+Default dest is local/models/nli-deberta-v3-base-onnx, which the Verifier finds
 automatically in a dev checkout and scripts/make_module.sh packages for the device.
 
-Source: cross-encoder/nli-deberta-v3-small on Hugging Face (Apache-2.0).
+Source: cross-encoder/nli-deberta-v3-base on Hugging Face (Apache-2.0).
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import os
 import sys
 import urllib.request
 
-BASE = "https://huggingface.co/cross-encoder/nli-deberta-v3-small/resolve/main"
+BASE = "https://huggingface.co/cross-encoder/nli-deberta-v3-base/resolve/main"
 FILES = {
     "model.onnx": f"{BASE}/onnx/model_qint8_arm64.onnx",
     "tokenizer.json": f"{BASE}/tokenizer.json",
@@ -27,7 +27,7 @@ FILES = {
 }
 DEFAULT_DEST = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "local", "models",
-    "nli-deberta-v3-small-onnx")
+    "nli-deberta-v3-base-onnx")
 
 
 def main() -> int:

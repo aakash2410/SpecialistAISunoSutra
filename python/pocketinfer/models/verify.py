@@ -1,6 +1,6 @@
 """On-device answer verifier: does an approved passage support this sentence?
 
-``cross-encoder/nli-deberta-v3-small`` (quantised, ~173 MB) on onnxruntime. It reads
+``cross-encoder/nli-deberta-v3-base`` (quantised, ~233 MB) on onnxruntime. It reads
 a passage and a sentence and scores whether the passage entails the sentence, which
 is the check retrieval scores cannot do: a passage can be related to a question
 without saying what the model answered.
@@ -25,11 +25,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Scores cluster near 0 and 1, so results did not change between 0.5 and 0.8.
-SUPPORT_THRESHOLD = 0.5
+# Chosen on the dev set in tests/dev and 60 real questions. On the blind set in tests/blind,
+# this model at 0.9 let 32 of 120 unsupported sentences through, against 45 for the smaller
+# nli-deberta-v3-small at 0.5, and kept 112 of 120 supported ones, against 111.
+SUPPORT_THRESHOLD = 0.9
 
 _DIR_ENV = "SPECIALIST_VERIFIER_DIR"
-_DIRNAME = "nli-deberta-v3-small-onnx"
+_DIRNAME = "nli-deberta-v3-base-onnx"
 _SENTENCE_RE = re.compile(r"(?<=[.!?;])\s+")
 
 

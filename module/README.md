@@ -10,7 +10,7 @@ This role installs the full software pipeline on a Jetson running JetPack 6, and
 | Hindi speech input, translation to and from English, speech output | Bhashini service on `127.0.0.1:11400`, in `/opt/specialist/bhashini_models` |
 | English speech input, Whisper `tiny.en` | `/opt/specialist/models/whisper` |
 | Retrieval, `multilingual-e5-small` | `/opt/specialist/models` |
-| Answer verifier, `nli-deberta-v3-small` | `/opt/specialist/models` |
+| Answer verifier, `nli-deberta-v3-base` | `/opt/specialist/models` |
 | Safety model, `nli-safety-onnx` | `/opt/specialist/models` |
 | Reading pages, Tesseract with Hindi and English | System package |
 | DIKSHA index | `/opt/specialist/corpus` |
