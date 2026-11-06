@@ -143,8 +143,9 @@ class LoopHarness:
             print(f"[1 OCR ] ({(time.time()-t0)*1000:.0f}ms) -> {raw!r}")
             return raw
         clip = mic.record()
+        t1 = time.time()
         raw = self.asr.transcribe(clip, self.in_lang)
-        print(f"[1 ASR ] ({(time.time()-t0)*1000:.0f}ms, {clip.duration_seconds:.1f}s audio) -> {raw!r}")
+        print(f"[1 ASR ] ({(time.time()-t1)*1000:.0f}ms, {clip.duration_seconds:.1f}s audio) -> {raw!r}")
         return raw
 
     def _translate_query(self, raw: str, T: dict) -> str:

@@ -22,7 +22,7 @@ The Jetson runs the current code, installed on 6 November with follow-up questio
 | Fine-tuned a safety model for unsafe questions | Caught 25 of 42 | Caught 39 of 42 |
 | Stopped the safety check blocking real lessons | Wrongly flagged 9 of 42 safe questions | 1 of 42, while catching 37 of 42 unsafe ones, up from 36 |
 | Fixed Hindi speech input dropping letters | The code knew 88 of the model's 128 sounds, so "मुझे" became "मुे" | "मुझे फोटोसिंथेसिस समझाए और दो एग्जाम्पल्स भी दीजिए" came through almost word for word |
-| Added a Hindi subject glossary | "भिन्न क्या होता है?" became "What is different?" | Translates as "fraction", while "दो भिन्न प्रकार" keeps its everyday meaning |
+| Added a Hindi subject glossary | "भिन्न क्या होता है?" became "What is different?" | Translates as "fraction", while "दो भिन्न प्रकार" keeps its everyday meaning. "एक और दो उदाहरण" now reads as "one or two examples", where the translator heard "another two examples" in a live test and dropped the question |
 | Cleaned the Class 7 index | 9,619 passages, including garbled scans and teacher manuals | 8,794 passages from 177 books, with no measured loss in answers |
 | Removed code and files we no longer use | 5,824 lines of code and 2.2 GB on disk | 5,008 lines and 606 MB |
 | Added follow-up questions | "Why is it important for animals?" meant nothing on its own | On the Jetson it became "Why is photosynthesis important for animals?" in 0.4 s, and "new topic" cleared the memory |
@@ -90,7 +90,7 @@ Mozilla's view on a small Qwen is still an open question, so we keep the answer 
 
 1. **Request:** the teacher speaks, shows a page or types.
 2. **Translate:** the request becomes English if it is in Hindi. A short glossary fixes Hindi subject terms first, such as "भिन्न" for fraction.
-3. **Safety check:** patterns look for violence, self-harm, abuse, fear, adult content, hate and medical questions. A general knowledge question with nothing personal in it, such as "Why was sati banned?", goes straight on to retrieval. Everything else goes to the fine-tuned safety model. A flagged request gets a fixed, human-written reply and never reaches the answer model. See [How safety works](#how-safety-works).
+3. **Safety check:** patterns look for violence, self-harm, abuse, fear, adult content, hate and medical questions. A general knowledge question with nothing personal in it, such as "Why was sati banned?" or "Tell me about Hitler", goes straight on to retrieval. A request for instructions, such as "Explain how to…", still goes to the safety model. Everything else goes to the fine-tuned safety model. A flagged request gets a fixed, human-written reply and never reaches the answer model. See [How safety works](#how-safety-works).
 4. **Retrieve:** a question about today, such as a price or the news, is refused, since textbooks can't answer it. Otherwise e5 embeds the request and searches the local DIKSHA index.
 5. **Gate:** the device refuses unless a passage both scores above 0.80 and shares a key term with the request. Only those passages reach the model and the citations.
 6. **Answer:** Qwen rephrases the passages in English, one sentence at a time.
@@ -108,7 +108,7 @@ Knowledge lives in the index, not the model, so new content needs no retraining.
 Every request is checked once it is in English, so one check covers Hindi and English. It goes through three steps in order:
 
 1. **Patterns:** these catch plain statements in six areas: self-harm, abuse and fear, violence, adult content, hate and medical questions. School terms such as "sex ratio" are left alone.
-2. **General question rule:** a school question with nothing personal in it, such as "Why was sati banned?", skips the safety model, which misread history and biology as danger. Words like "I", "my", "someone" or "best way to" send it on.
+2. **General question rule:** a school question with nothing personal in it, such as "Why was sati banned?" or "Tell me something about Hitler", skips the safety model, which misread history and biology as danger. Words like "I", "my", "someone" or "best way to", or a request for instructions such as "Explain how to…", send it on.
 3. **Safety model:** `nli-deberta-v3-small`, fine-tuned only on free public data and DIKSHA text. It weighs 10 concerns against 3 safe descriptions. It catches requests that no pattern matches, such as "How do I make my teacher sick?".
 
 These protections sit around the check:

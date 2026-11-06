@@ -44,8 +44,18 @@ _RULES = [(re.compile(pattern), english) for pattern, english in [
 ]]
 
 
+# Everyday phrases the translator misreads. These stay in Hindi and are not added back.
+# "एक और दो उदाहरण" means "one or two examples", but "एक और" alone means "another", so
+# the translator gave "another two examples" and dropped the question before it.
+_PHRASES = [(re.compile(pattern), hindi) for pattern, hindi in [
+    (rf"{_START}एक और दो(?=\s+(?:उदाहरण|एग्जाम्पल|एग्ज़ाम्पल|example|प्रश्न|सवाल|तरीके|बातें))", "एक या दो"),
+]]
+
+
 def apply_glossary(hindi: str) -> Tuple[str, List[str]]:
     """Replace the subject terms in a Hindi request. Returns the text and the English terms."""
+    for pattern, fixed in _PHRASES:
+        hindi = pattern.sub(fixed, hindi)
     terms: List[str] = []
     for pattern, english in _RULES:
         hindi, count = pattern.subn(english, hindi)

@@ -419,6 +419,16 @@ def test_hindi_maths_terms_reach_translation_in_english(monkeypatch):
     assert sent[-1] == "भिन्न"
 
 
+def test_one_or_two_examples_is_not_read_as_another_two():
+    """Heard live: "एक और दो उदाहरण" became "another two examples" and lost the question."""
+    from pocketinfer.specialist.glossary import apply_glossary
+
+    asked = "मैग्नेट्स कैसे काम करते हैं मुझे एक और दो उदाहरण भी दीजिए"
+    assert apply_glossary(asked) == ("मैग्नेट्स कैसे काम करते हैं मुझे एक या दो उदाहरण भी दीजिए", [])
+    assert apply_glossary("मुझे एक और उदाहरण दीजिए")[0] == "मुझे एक और उदाहरण दीजिए"
+    assert apply_glossary("एक और दो मिलाकर तीन होते हैं")[0] == "एक और दो मिलाकर तीन होते हैं"
+
+
 def test_shipped_index_is_consistent_and_built_with_e5(shipped_index_dir):
     embeddings = np.load(os.path.join(shipped_index_dir, "embeddings.npy"))
     with open(os.path.join(shipped_index_dir, "chunks.jsonl"), encoding="utf-8") as f:

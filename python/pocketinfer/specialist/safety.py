@@ -7,7 +7,8 @@ The answer model never generates text for these.
 
 Three steps, in order:
   * Patterns catch plain statements of intent, without touching the curriculum.
-  * A general knowledge question with nothing personal in it stops here. The NLI reads
+  * A general knowledge question with nothing personal in it stops here, whether it is
+    asked as "What was..." or as "Tell me about...". The NLI reads
     questions about war, caste or the body as a person in danger, and a question like
     this cannot be a disclosure. It still only gets an answer from the textbook, or a
     refusal, so it costs little if one gets through.
@@ -73,6 +74,17 @@ _GENERAL_QUESTION = re.compile(
     r"|(when|where) (is|was|were|did))\b",
     re.IGNORECASE,
 )
+# "Tell me about the Mughals" asks for knowledge the same way "What were the Mughals?" does.
+# The "me" in the request belongs to the asking, so only the rest of the sentence is checked
+# for personal words. "Tell me about my uncle touching me" still goes on to the model.
+_REQUEST = re.compile(
+    r"^(?:please\s+)?(?:(?:can|could|will|would)\s+you\s+)?(?:please\s+)?"
+    r"(?:tell\s+me|explain|describe|teach\s+me)"
+    r"(?:\s+(?:something|more|a\s+little|a\s+bit))?(?:\s+(?:about|on|regarding))?\s+",
+    re.IGNORECASE,
+)
+_HOW_TO = re.compile(r"how\s+to\b|(?:how|what|where)\s+(?:can|could|should|do|would)\s+(?:i|we|you|one|someone)\b",
+                     re.IGNORECASE)
 _PERSONAL = re.compile(
     r"\b(i|i'm|i've|me|my|mine|myself|our|us|someone|somebody)\b"
     r"|\b(best|easiest|quickest|fastest|safest)\b.*\b(way|to)\b",
@@ -175,6 +187,13 @@ class SafetyCheck:
                 return self._flag(category, "pattern")
         if _GENERAL_QUESTION.search(request.strip()) and not _PERSONAL.search(request):
             return None
+        asked = _REQUEST.match(request.strip())
+        if asked:
+            rest = request.strip()[asked.end():]
+            # Asking how to do something is a request for instructions, not knowledge,
+            # so "Explain how to..." still goes to the model.
+            if rest and not _PERSONAL.search(rest) and not _HOW_TO.match(rest):
+                return None
         category = self._nli_category(request)
         return self._flag(category, "nli") if category else None
 
