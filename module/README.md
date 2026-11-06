@@ -95,7 +95,7 @@ specialist-voice --in-lang en --out-lang en --from-image page.jpg
 The install sets these up to apply automatically, because they do not survive a reboot on their own:
 
 - Continuous autofocus stays on for the camera, including after a replug.
-- USB power saving stays off for the camera, because it made the camera drop off USB. A udev rule alone did not hold through boot, so the boot check applies it again before and after it runs. This second fix has not yet been confirmed after a reboot.
+- USB power saving stays off for the camera, because it made the camera drop off USB. A udev rule alone did not hold through boot, so the boot check applies it again before and after it runs. This second fix held after a reboot on 6 November.
 - The microphone and speaker come from `/etc/default/specialist`.
 
 The boot check then waits for the services, loads the answer model and looks for the microphone, speaker and camera. To see its result:

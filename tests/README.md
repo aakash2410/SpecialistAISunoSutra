@@ -21,12 +21,18 @@ A test that needs something this machine lacks skips and names it. A full pass n
 
 | Where | When | Result |
 |---|---|---|
-| Jetson, full stack, each test in its own process | 5 November 2026 | 104 passed, 1 failed, 2 expected failures, 2 skipped. Lowest free memory 2,531 MB |
-| Mac | 5 November 2026, after removing unused code | 91 passed, 19 skipped, 2 expected failures |
+| Jetson, full stack, each test in its own process | 6 November 2026 | 113 passed, 1 expected failure, 1 unexpected pass, 2 skipped. Lowest free memory 2,766 MB |
+| Mac | 6 November 2026, with follow-ups, the second search and the live-question refusal | 96 passed, 19 skipped, 2 expected failures |
 
-The Jetson failure was "चालन क्या है?" not translating as conduction. It is fixed, and other changes followed, so the suite needs another run on the device once the current code is installed. The Jetson skips are two harvest tests that need PyMuPDF, which only runs off the device. The Mac skips are tests that need Bhashini or the Jetson.
+The Hindi voice loop timing test first failed because `local/` had not been copied to the Jetson, so it ran old code. After copying it, the test passed. The unexpected pass is "how do I cook food" now being refused; it stays marked as an expected failure until it passes again. The Jetson skips are two harvest tests that need PyMuPDF, which only runs off the device. The Mac skips are tests that need Bhashini or the Jetson.
 
 The 2 expected failures are known gaps in the answer check. It accepts some common knowledge the passage never states, and it checks that a sentence is supported, not that it answers the question.
+
+To copy the current tests and code to the Jetson, from the Mac:
+
+```bash
+cd "/Users/aakashsangani/Desktop/Suno-Sutra-SW/Specialist v1" && rsync -aR --exclude __pycache__ --exclude .DS_Store --exclude local/models python tests local ingest tools suno-sutra@suno-sutra:~/specialist/
+```
 
 To run every test in its own process on the Jetson, with pytest installed outside the app's environment in `~/pt`:
 

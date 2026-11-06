@@ -8,7 +8,7 @@ This file reflects the system as of 6 November 2026.
 
 The full pipeline runs on a Jetson Orin Nano, from live Hindi or English speech through a USB camera's microphone to a spoken answer. We demoed it to the Kalpa team in Bombay on 5 November. Their main feedback matched ours: the voice sounds robotic and needs to sound more human. It is not ready for classrooms: answers can still be wrong, the safety check still misses some self-harm statements, and the safety replies have not had a safeguarding review.
 
-The Jetson runs the current code, apart from a warm-up fix that so far exists only on the Mac.
+The Jetson runs the current code, installed on 6 November with follow-up questions, the larger answer check and the second search. After a reboot the boot check, the camera's power setting and the warm-up all held, and all the device tests passed.
 
 ## Progress and plan
 
@@ -25,6 +25,9 @@ The Jetson runs the current code, apart from a warm-up fix that so far exists on
 | Added a Hindi subject glossary | "भिन्न क्या होता है?" became "What is different?" | Translates as "fraction", while "दो भिन्न प्रकार" keeps its everyday meaning |
 | Cleaned the Class 7 index | 9,619 passages, including garbled scans and teacher manuals | 8,794 passages from 177 books, with no measured loss in answers |
 | Removed code and files we no longer use | 5,824 lines of code and 2.2 GB on disk | 5,008 lines and 606 MB |
+| Added follow-up questions | "Why is it important for animals?" meant nothing on its own | On the Jetson it became "Why is photosynthesis important for animals?" in 0.4 s, and "new topic" cleared the memory |
+| Added a second search for refused questions | "What is the speed of light?" was refused, though five passages state it | Answered on the Jetson. Nothing else changed across 61 dev and 30 off-topic questions |
+| Refused questions about today | "What is the price of gold today?" got a maths exercise as the answer | Refused on the Jetson before any search |
 
 Three limits apply to these numbers:
 
@@ -36,17 +39,13 @@ Three limits apply to these numbers:
 
 | Step | Why it matters | Status |
 |---|---|---|
-| Install the warm-up fix and keep the answer model loaded | The first English question took 24 s, because Qwen had unloaded after 30 idle minutes and the answer check's first run is slow | Built on the Mac, not yet on the Jetson |
-| Confirm the camera stays out of USB power saving after a reboot | The first fix did not hold through boot. The second has not been checked | Next |
-| Rerun all tests on the device | The last device run predates several fixes | Next |
 | Make the voice sound human | The Bombay team, like us, found Flite robotic. Kokoro sounded human but was about 1 s slower even on the GPU, and we chose not to bring it back. Six Flite pitch and filter versions are ready to compare | Open, top feedback from Bombay |
-| Try a larger answer-check model | On a blind test set, the current check let 45 of 120 unsupported sentences through. On the dev set, `nli-deberta-v3-base` let 17 of 96 through against 31, with the same good sentences kept. It is about twice as slow per check | Being tested |
-| Boost exact phrase matches in search | "What is the speed of light?" was refused, though five passages state it. A second search, used only when the first gives no answer, now finds it and changes nothing else on 61 dev and 30 off-topic questions | Done on the Mac, not yet on the Jetson |
+| Improve the answer check further | On a blind test set, the small check let 45 of 120 unsupported sentences through. `nli-deberta-v3-base` let 32 through, so real errors still pass. A fine-tune of the base model is planned | `nli-deberta-v3-base` installed on the Jetson, fine-tune not started |
 | Catch more self-harm statements | It missed "What is the point of me being alive?", and these are the most serious misses | Open |
 | Safeguarding review of responses and helpline numbers | Required before any use with students | Needs an owner |
 | Test the full loop with the network off | The device must work offline, and this is not yet proven | Not started |
 | Test page reading with the camera in the full loop | The camera read one clean printed page. A real textbook page would become one long question, because picking out a single question is not built | Not started |
-| Stop wrong answers to off-topic questions | It said Edison invented the telephone. Questions about today, such as the price of gold, are now refused on the Mac | Open |
+| Stop wrong answers to off-topic questions | It said Edison invented the telephone. Questions about today, such as the price of gold, are now refused | Open |
 | Test SmolLM3 as a fallback answer model | Mozilla may not accept a small Qwen | Before 12 November |
 | Fine-tune Qwen to refuse when a passage lacks the answer | Answering from memory is the main remaining failure | On hold |
 | Finish the case and decide on a talk button | Speech starts and stops with the Enter key, and the case is only specified | In progress |
@@ -59,7 +58,7 @@ Three limits apply to these numbers:
 |---|---|---|
 | Answer model | Qwen2.5-1.5B through Ollama (Apache-2.0), on the GPU | Running on the Jetson |
 | Retrieval | `multilingual-e5-small` on ONNX, on the CPU | Running on the Jetson |
-| Answer check | `nli-deberta-v3-base` on ONNX (Apache-2.0), on the CPU, at a 0.9 threshold. It replaced `nli-deberta-v3-small`, which let more unsupported sentences through | Built on the Mac, not yet on the Jetson |
+| Answer check | `nli-deberta-v3-base` on ONNX (Apache-2.0), on the CPU, at a 0.9 threshold. It replaced `nli-deberta-v3-small`, which let more unsupported sentences through | Running on the Jetson |
 | Safety check | Patterns, then a rule that lets general knowledge questions through, then `nli-deberta-v3-small` fine-tuned for safety, on the CPU | Running on the Jetson |
 | Hindi speech input, translation through English | Bhashini, with translation on the GPU and its Hindi vocabulary restored to all 128 tokens. Tamil speech input and Indic-to-Indic translation are removed to save memory | Running on the Jetson |
 | English speech input | Whisper `tiny.en` on the CPU. It loads only for English speech | Running on the Jetson. It heard 3 of 3 live questions correctly |
@@ -67,7 +66,7 @@ Three limits apply to these numbers:
 | Reading textbook pages | Tesseract with Hindi and English, because Bhashini has no OCR | Running on the Jetson |
 | Microphone and camera | Arducam 8MP USB camera, using its built-in microphone | Working |
 | Speaker | USB speaker | Working |
-| Every boot | Camera settings, chosen devices and a boot check that ends in `READY` | Running, camera power setting unconfirmed |
+| Every boot | Camera settings, chosen devices and a boot check that ends in `READY` | Running, and confirmed after a reboot on 6 November |
 
 **What we tried and dropped.**
 
@@ -157,7 +156,7 @@ Longer first sentences slow every later step, so asking Qwen for a short opening
 
 **Jetson memory, out of 7.4 GB with the desktop on.** Bhashini holds about 1.5 GB, Qwen 1.2 GB on the GPU and the answer check about 600 MB. The safety model adds about 220 MB. Across all 109 device tests, free memory never fell below 2,531 MB.
 
-**Jetson tests on 5 November.** 104 passed, 1 failed, 2 expected failures, 2 skipped. The failure was "चालन क्या है?" not translating as conduction, which is fixed but not yet rerun on the device. See [tests/README.md](tests/README.md).
+**Jetson tests on 6 November.** 113 passed, 1 expected failure, 2 skipped, and 1 expected failure now passes. The Hindi voice loop timing test first failed because the Jetson's test copy of the voice loop was out of date. With the current code it passed, with the first Hindi sentence ready in 2.42 s from a recorded question: speech recognition 251 ms, translation in 116 ms, search 42 ms, Qwen 682 ms, answer check 387 ms, translation out 417 ms and speech 889 ms. The surprise pass is "how do I cook food" now being refused, which the larger answer check probably caused. It stays marked as an expected failure until it passes again. Lowest free memory was 2,766 MB. On 5 November the conduction translation failed, and that is now fixed. See [tests/README.md](tests/README.md).
 
 **Safety check, on 84 questions written before the general knowledge rule and scored once.**
 
@@ -229,10 +228,10 @@ Pleias also made basic errors, such as adding fractions by multiplying numerator
 
 | Part | What we use | Notes |
 |---|---|---|
-| Computer | Jetson Orin Nano 8GB Super Developer Kit | Plugged in, no battery, 25 W mode |
+| Computer | Jetson Orin Nano 8GB Super Developer Kit | Plugged in, 25 W mode. A battery is under discussion, because two of the user journeys need the device to move around the classroom |
 | Microphone and camera | Arducam 8MP USB camera (B029202) | Settings applied at every boot |
 | Speaker | USB speaker | Chosen by name in the settings |
-| Case | 3D-printed, plug-in, desk use | [Specialist Case Spec](https://claude.ai/artifact/3D3fcDWkQKapE3nWWFvjEt), which needs updating now the microphone is on the camera's cable |
+| Case | 3D-printed, desk use. V3 is modelled around NVIDIA's dev kit model, with the display, LED button and camera from V2 | [Specialist Case Spec](https://claude.ai/artifact/3D3fcDWkQKapE3nWWFvjEt), which needs updating for V3, the microphone and the battery question |
 
 The case spec page is private until shared.
 
