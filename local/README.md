@@ -10,6 +10,8 @@ From a checkout on the device, with Ollama and Bhashini running:
 python -m local.voice_loop --in-lang hi --out-lang hi --from-wav question.wav
 ```
 
+Answers always stream: each sentence is checked, translated and spoken while the next is being written. Each answer prints the time every step took, under `[steps]`.
+
 Each part is swappable by name:
 
 | Option | Choices |
