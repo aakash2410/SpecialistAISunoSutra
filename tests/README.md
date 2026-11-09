@@ -40,6 +40,26 @@ To run every test in its own process on the Jetson, with pytest installed outsid
 cd ~/specialist && export PYTHONPATH=~/pt; P="/opt/specialist/venv/bin/python -W ignore -m pytest"; $P tests --collect-only -q | grep "::" > /tmp/tests.txt; : > ~/test_results.txt; while IFS= read -r t; do r=$($P "$t" -q -rsx --no-header 2>&1 | tail -1); printf '%s => %s | free %s MB\n' "$t" "$r" "$(free -m | awk 'NR==2{print $7}')" | tee -a ~/test_results.txt; done < /tmp/tests.txt
 ```
 
+## Benchmarks
+
+Compare answer models on 60 curriculum, 30 off-topic and 8 passage-lacks-answer questions:
+
+```bash
+python3 tests/benchmark/answer_models.py qwen2.5:1.5b hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M
+```
+
+Score the safety check on the frozen, development, adversarial and holdout sets:
+
+```bash
+python3 tests/safety/score.py
+```
+
+Never change a rule because of a specific item in `tests/safety/holdout.json`. First-sentence timing for the Flite versions needs the Jetson:
+
+```bash
+/opt/specialist/venv/bin/python -W ignore tests/benchmark/tts_variants.py
+```
+
 ## Test files
 
 `fixtures/` holds a spoken English question, a spoken Hindi question and an image of a printed question. These are clean and synthetic: the WAV files use a macOS voice and the image is computer-rendered, so they do not show how well the device handles real classroom speech or camera photos. Live tests with the Arducam microphone and camera are recorded in the main [README](../README.md).

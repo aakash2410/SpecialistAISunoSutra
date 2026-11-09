@@ -40,6 +40,7 @@ from .grounding import (
     is_refusal_response,
     iter_sentences,
 )
+from .answer_guard import QUESTION_SIMILARITY, contradicts
 from .rerank import CANDIDATES, load_vocabulary, rescue
 from .safety import SafetyCheck, load_safety_model
 from .vector_index import Retrieved, VectorIndex
@@ -159,6 +160,21 @@ class SpecialistEngine:
         """
         return self._ground(request, self._search(request)[:self.top_k])
 
+    def _supporting_passage(self, request: str, sentence: str, passages: List[Retrieved], first: bool):
+        """The passage behind a sentence, or None if the sentence should be dropped.
+
+        Only an answer's first sentence is held to the question. Later sentences add detail
+        and often say "they" or "this", so they would look unrelated on their own.
+        """
+        source = self.verifier.supporting_passage(sentence, passages)
+        if source is None or contradicts(sentence, [p.text for p in passages]):
+            return None
+        if first:
+            question = self.embedder.embed_one(request, kind="query")
+            if float(question @ self.embedder.embed_one(sentence, kind="passage")) < QUESTION_SIMILARITY:
+                return None
+        return source
+
     def _search(self, request: str) -> List[Retrieved]:
         """The top candidates in search order: the first top_k are the plain result,
         and the rest are kept for a rescue."""
@@ -246,7 +262,7 @@ class SpecialistEngine:
                 text = clean_answer(sentence)
                 if not text:
                     continue
-                source = self.verifier.supporting_passage(text, g.passages)
+                source = self._supporting_passage(request, text, g.passages, first=idx == 0)
                 _mark("check")
                 if source is None:
                     logger.info("Dropped an unsupported sentence: %s", text)
@@ -382,7 +398,7 @@ class SpecialistEngine:
             text = clean_answer(sentence)
             if not text:
                 continue
-            source = self.verifier.supporting_passage(text, g.passages)
+            source = self._supporting_passage(request, text, g.passages, first=not kept)
             if source is None:
                 dropped.append(text)
                 continue

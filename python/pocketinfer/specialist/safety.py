@@ -47,21 +47,47 @@ _PATTERNS = {
                  r"|\bend (my|his|her|their) life\b|\bdo(n't| not) want to live\b|\bno reason to live\b"
                  r"|\bjump (off|from)\b.*\b(roof|building|bridge)\b|\btoo many (tablets|pills)\b"
                  r"|\b(nobody|no one) would care\b|\bwant (it|this|everything) to end\b"
-                 r"|\bswallow\b.*\b(pills|tablets)\b",
+                 r"|\bswallow\b.*\b(pills|tablets)\b"
+                 # Indirect statements: no point in living, wishing not to exist, feeling worthless.
+                 r"|\b(?:point|use)\s+(?:of|in)\s+(?:me\s+|my\s+)?(?:being\s+alive|staying\s+alive|going\s+on|my\s+life"
+                 r"|living(?!\s+(?:things?|organisms?|beings?|creatures?|room|cells?)))\b"
+                 r"|\bwhy\s+(?:should|would)\s+i\b.{0,30}\b(?:alive|live|go\s+on)\b"
+                 r"|\b(?:wish|want)\b.{0,25}\b(?:disappear|vanish|never\s+been\s+born|not\s+(?:be\s+)?(?:here|alive))\b"
+                 r"|\bwish\s+i\s+(?:would|could)?\s*(?:not|never)\s+wake\b"
+                 r"|\bi(?:'m|\s+am|\s+feel)\b.{0,25}\b(?:worthless|hopeless|a\s+burden)\b"
+                 r"|\b(?:nobody|no\s+one)\s+(?:needs|wants|loves)\s+me\b|\bno\s+hope\s+(?:left\s+)?for\s+me\b"
+                 r"|\btired\s+of\s+(?:being\s+alive|living|my\s+life)\b|\bcan(?:'t|not)\s+go\s+on\b"
+                 r"|\b(?:happier|easier|better)(?:\s+off)?\s+(?:without\s+me|if\s+i\s+(?:was|were|am)\s+(?:not\s+here|gone|dead))\b"
+                 r"|\bbetter\s+when\s+(?:i|she|he)\s+(?:am|is)\s+gone\b"
+                 r"|\b(?:fall|dose|amount)\b.{0,30}\b(?:fatal|lethal)\b",
     "abuse": r"\b(touch|touches|touched|touching)\b.*\b(me|her|him|my body|private|bad way)\b|\bbad touch\b"
              r"|\b(beat|beats|beating|hit|hits|hurt|hurts|slap|slaps|kick|kicks|burn|burns) (me|him|her)\b"
              r"|\bprivate (photos|pictures|parts)\b|\bforced? to marry\b|\block(s|ed)? (me|him|her)\b"
              r"|\bmolest|\brape[ds]?\b|\bharass"
-             r"|\bi(?:'m| am)\b.*\b(scared|afraid|frightened|terrified)\b",
+             r"|\bi(?:'m| am)\b.*\b(scared|afraid|frightened|terrified)\b"
+             # Fear of a person, secrets and unwanted contact, said without naming the harm.
+             r"|\b(?:scared|afraid|frightened|terrified)\s+of\s+(?:my|her|his|their)\b"
+             r"|\b(?:don'?t|do\s+not)\s+feel\s+safe\b|\b(?:comes?|came)\s+into\s+my\s+(?:room|bed)\b"
+             r"|\b(?:told|tells|said|says)\s+me\s+not\s+to\s+tell\b|\bour\s+secret\b"
+             r"|\bwhat\s+(?:he|she|they)\s+(?:does|did|do)\s+to\s+me\b|\bphotos?\s+i\s+did\s+not\s+ask\b",
     "violence": r"\b(make|making|build|building|get|buy|create)\b.*\b(bomb|explosives?|gun|pistol|weapon|poison)\b"
                 r"|\b(hurt|kill|stab|beat up|attack|poison)\b (someone|somebody|a person|my|him|her|them|a classmate)\b"
                 r"|\bat someone\b|\bsomeone's food\b|\bsteal\b|\bbreak into\b|\bshoplift"
                 r"|\bset\b.*\bon fire\b|\bburn (down|(a|the) (house|building|school))\b",
     "adult": r"\bporn|\bsex\b(?! (ratio|determination|organs?|cells?|hormones?))|\bnaked\b|\bnude\b"
-             r"|\bdirty (story|joke|picture|video)|\b(adult|blue) (video|film|movie|content)|\berotic",
+             r"|\bdirty (story|joke|picture|video)|\b(adult|blue) (video|film|movie|content)|\berotic"
+             r"|\bsexy\b|\bmasturbat|\bsexual\s+(?:intercourse|acts?)\b|\bno\s+clothes\b"
+             r"|\bcouples?\b.*\bin\s+bed\b|\bhot\s+(?:videos?|pictures?|photos?)\b",
     "hate": r"\b(caste|religion|community|race|tribe|tribal|muslims?|hindus?|christians?|sikhs?|dalits?|girls?|boys?|women|men)\b"
-            r".*\b(worst|worse than|inferior|bad people|dumb|stupid|lowest|smarter than|should not (go|be educated)|should leave)\b"
+            r".*\b(worst|worse than|inferior|bad people|dumb|stupid|lowest|smarter than|should not (go|be educated)|should leave|bad at|should stay at home)\b"
             r"|\b(worst|lowest)\b.*\b(caste|religion)\b|\bless intelligent\b|\binsults?\b",
+    # Opinions on social questions go to the teacher. Facts, like "What is the caste system?",
+    # do not match, so they still get a textbook answer.
+    "sensitive": r"\b(?:caste|cast)\b(?:\s+system)?\b.{0,20}\b(?:good|bad|right|wrong|fair|useful)\b"
+                 r"|\buntouchability\b.{0,20}\b(?:good|right|okay|ok|fair)\b"
+                 r"|\bwhich\s+(?:religion|caste)\s+is\s+(?:the\s+)?(?:best|better|right|true)\b"
+                 r"|\bshould\s+girls\b.{0,30}\b(?:stop|not|leave)\b"
+                 r"|\b(?:lower|upper)\s+castes?\b.{0,20}\b(?:meant|should|must|born)\b",
     "medical": r"\b(which|what) (medicine|drug|tablets?|pills?|dose)\b|\bhow much (paracetamol|medicine)\b"
                r"|\b(should|can) i (take|give|stop)\b.*\b(medicine|tablets?|drug|dose|paracetamol)\b"
                r"|\btreat\b.*\bat home\b|\bstop\b.*\bbleeding\b|\bsnake ?bite\b",
@@ -100,6 +126,9 @@ _CONCERNS = [
     "A child is being touched in a sexual way.",
     "The speaker is asking about sex or pornography.",
     "The speaker says one group of people is worse than another.",
+    "The speaker feels hopeless or worthless.",
+    "The speaker wishes they did not exist.",
+    "The speaker is afraid of someone who hurts them.",
 ]
 _MEDICAL_CONCERNS = [
     "The speaker asks which medicine to take.",
@@ -114,7 +143,7 @@ _SAFE_LABELS = [
 # Which fixed response each category gets. Anything else flagged only by the NLI gets the
 # unsure message, because the NLI cannot tell which kind of concern it found and it does
 # flag some harmless requests.
-_RESPONSE_FOR = {"self_harm": "self_harm", "abuse": "care", "concern": "unsure", "medical": "medical",
+_RESPONSE_FOR = {"self_harm": "self_harm", "abuse": "care", "concern": "unsure", "sensitive": "unsure", "medical": "medical",
                  "violence": "decline", "adult": "decline", "hate": "decline"}
 
 RESPONSES: Dict[str, Dict[str, str]] = {

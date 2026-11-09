@@ -141,7 +141,11 @@ class LoopHarness:
             with open(self.args.from_image, "rb") as f:
                 raw = Ocr().infer(f.read(), self.in_lang)["text"]
             print(f"[1 OCR ] ({(time.time()-t0)*1000:.0f}ms) -> {raw!r}")
-            return raw
+            from pocketinfer.specialist.page_questions import extract_questions_from_ocr, question_from_page
+
+            question = question_from_page(raw, self.args.question_index)
+            print(f"[1 PAGE] {len(extract_questions_from_ocr(raw))} question(s) found, using: {question!r}")
+            return question
         clip = mic.record()
         t1 = time.time()
         raw = self.asr.transcribe(clip, self.in_lang)
@@ -250,6 +254,8 @@ def main():
                     help="skip ASR: use this text as the request; repeat it to ask follow-ups")
     ap.add_argument("--from-wav", default=None, help="use a WAV file as the spoken request")
     ap.add_argument("--from-image", default=None, help="read the request from a page image (OCR)")
+    ap.add_argument("--question-index", type=int, default=None,
+                    help="with --from-image, which question on the page to use, from 0 (default: the middle one)")
     ap.add_argument("--mic-device", default=os.environ.get("SPECIALIST_MIC_DEVICE", "plughw:1,0"),
                     help="ALSA capture device for the live mic (find it with arecord -l)")
     # providers (swappable)

@@ -243,7 +243,7 @@ def test_streaming_refuses_when_nothing_survives(make_engine):
 
 def test_only_the_passage_behind_the_answer_is_cited(make_engine):
     # Retrieval brings back several photosynthesis and plant passages for this one.
-    answer = "Oxygen is released during this process."
+    answer = "Leaves are the food factories of plants."
     result = make_engine(llm=lambda system, user: answer).answer("how do leaves make food for the plant")
     assert result.answer_en == answer
     assert len(result.citations) == 1
@@ -417,6 +417,63 @@ def test_hindi_maths_terms_reach_translation_in_english(monkeypatch):
     assert sent[-1] == "वाहन चालन का लाइसेंस कैसे मिलता है?"
     assert mt.translate("भिन्न", "EN", "HI") == "What is different?"
     assert sent[-1] == "भिन्न"
+
+
+def test_the_next_sentence_is_prepared_while_this_one_plays():
+    import threading
+
+    from pocketinfer.specialist import speak_stream
+    from pocketinfer.specialist.pipeline import SentenceResult
+
+    playing_first, second_ready = threading.Event(), threading.Event()
+    overlapped = []
+
+    def sentences():
+        yield SentenceResult(0, "One.", "One.", b"1")
+        assert playing_first.wait(5)                     # the first sentence has started playing
+        second_ready.set()                               # and the second is being prepared now
+        yield SentenceResult(1, "Two.", "Two.", b"2")
+
+    def play(audio):
+        if audio == b"1":
+            playing_first.set()
+            overlapped.append(second_ready.wait(5))      # still playing when the second is ready
+
+    results, _ = speak_stream(sentences(), play)
+    assert len(results) == 2 and overlapped == [True]
+
+
+def test_smollm3_is_told_not_to_think_and_its_thinking_is_never_spoken():
+    from pocketinfer.specialist.llm import _system_for, strip_thinking, without_thinking
+
+    assert _system_for("hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M", "Rules").startswith("/no_think")
+    assert _system_for("qwen2.5:1.5b", "Rules") == "Rules"
+    assert strip_thinking("<think>hmm</think> Plants make food.") == "Plants make food."
+    assert "".join(without_thinking(["<thi", "nk>hmm</th", "ink>Plants ", "make food."])) == "Plants make food."
+
+
+@pytest.mark.parametrize("sentence, passage", [
+    ("The wire bends towards the poles.", "The wire bends away from the poles."),
+    ("Pollen moves from the stigma to the anther.", "Pollen moves from the anther to the stigma."),
+    ("Parallel lines meet each other at one point.", "Parallel lines do not meet each other."),
+    ("The word comes from the Greek word foris.", "The word comes from the Latin word foris."),
+    ("The heart has 6 chambers.", "The heart has four chambers."),
+])
+def test_a_flipped_fact_is_caught(sentence, passage):
+    from pocketinfer.specialist.answer_guard import contradicts
+
+    assert contradicts(sentence, [passage])
+
+
+@pytest.mark.parametrize("sentence, passage", [
+    ("The wire bends away from the poles.", "The wire bends away from the poles."),
+    ("The heart has 4 chambers.", "The heart has four chambers."),
+    ("Parallel lines never meet.", "Parallel lines do not meet each other."),
+])
+def test_a_faithful_sentence_is_not_mistaken_for_a_flipped_one(sentence, passage):
+    from pocketinfer.specialist.answer_guard import contradicts
+
+    assert not contradicts(sentence, [passage])
 
 
 def test_one_or_two_examples_is_not_read_as_another_two():

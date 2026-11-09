@@ -15,6 +15,8 @@ A test set that no model or setting was tuned on. Use it to measure, never to tu
 
 The passages were drawn at random, one per book, then hand-picked for stating facts. About half of the first random draw was teacher instructions, exercises or garbled scans that state no facts, which is a finding about the index in its own right. A few chosen passages still have scan damage, because the device sees those too.
 
+On 9 November the pipeline gained checks for flipped facts and question relevance. `score.py` now reports three columns, and `off_question` sentences are expected to be dropped by the relevance column.
+
 ## Rules
 
 - Score with `score.py`, and report the result alongside the change that produced it.

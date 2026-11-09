@@ -12,8 +12,50 @@ Returns a callable matching pipeline.LLMClient: (system_prompt, user_prompt) -> 
 from __future__ import annotations
 
 import logging
+import re
+from typing import Iterable, Iterator
 
 logger = logging.getLogger(__name__)
+
+_THINK = re.compile(r"<think>.*?(?:</think>\s*|$)", re.DOTALL)
+
+
+def _system_for(model_name: str, system_prompt: str) -> str:
+    """SmolLM3 reasons out loud unless told not to, which delays the first sentence."""
+    return f"/no_think\n{system_prompt}" if "smollm3" in model_name.lower() else system_prompt
+
+
+def strip_thinking(text: str) -> str:
+    return _THINK.sub("", text or "")
+
+
+def without_thinking(chunks: Iterable[str]) -> Iterator[str]:
+    """Drop any <think>...</think> block from a stream, even if a tag spans two chunks."""
+    buffer, thinking = "", False
+    for chunk in chunks:
+        buffer += chunk or ""
+        while True:
+            if thinking:
+                end = buffer.find("</think>")
+                if end < 0:
+                    buffer = buffer[-7:]
+                    break
+                buffer, thinking = buffer[end + 8:].lstrip(), False
+            else:
+                start = buffer.find("<think>")
+                if start >= 0:
+                    if start:
+                        yield buffer[:start]
+                    buffer, thinking = buffer[start + 7:], True
+                    continue
+                # Hold back a tail that could be the start of a tag.
+                keep = next((n for n in range(min(6, len(buffer)), 0, -1) if "<think>".startswith(buffer[-n:])), 0)
+                if len(buffer) > keep:
+                    yield buffer[:len(buffer) - keep]
+                    buffer = buffer[len(buffer) - keep:]
+                break
+    if buffer and not thinking:
+        yield buffer
 
 
 def ollama_grounded_client(model_name: str, num_predict: int = 128,
@@ -32,16 +74,16 @@ def ollama_grounded_client(model_name: str, num_predict: int = 128,
         resp = client.chat(
             model=model_name,
             messages=[
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": _system_for(model_name, system_prompt)},
                 {"role": "user", "content": user_prompt},
             ],
             options={"num_predict": num_predict, "temperature": temperature},
             keep_alive=keep_alive,
         )
         try:
-            return resp.message.content
+            return strip_thinking(resp.message.content)
         except AttributeError:
-            return resp["message"]["content"]
+            return strip_thinking(resp["message"]["content"])
 
     return _client
 
@@ -62,18 +104,22 @@ def ollama_grounded_stream_client(model_name: str, num_predict: int = 128,
         stream = client.chat(
             model=model_name,
             messages=[
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": _system_for(model_name, system_prompt)},
                 {"role": "user", "content": user_prompt},
             ],
             options={"num_predict": num_predict, "temperature": temperature},
             keep_alive=keep_alive,
             stream=True,
         )
-        for chunk in stream:
-            try:
-                yield chunk.message.content
-            except AttributeError:
-                yield chunk["message"]["content"]
+
+        def text():
+            for chunk in stream:
+                try:
+                    yield chunk.message.content
+                except AttributeError:
+                    yield chunk["message"]["content"]
+
+        yield from without_thinking(text())
 
     return _client
 
