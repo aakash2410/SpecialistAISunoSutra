@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compare answer models on 60 curriculum, 30 off-topic and 8 passage-lacks-answer questions.
 
-    python3 tests/benchmark/answer_models.py qwen2.5:1.5b hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M
+    python3 tests/benchmark/answer_models.py qwen2.5:1.5b
 
 Timings are for the machine it runs on. Run it on the Jetson for numbers that count.
 """

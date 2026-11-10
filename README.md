@@ -57,13 +57,13 @@ Follow-ups are rewritten from the last 3 turns, then go through every step. Memo
 ## Pending
 
 1. Make the voice sound human, the top feedback from Bombay.
-2. Test SmolLM3 as a fallback answer model, before 12 November.
+2. SmolLM3-3B as a fallback answer model: tested on the Mac 10 November. It matched Qwen on accuracy (52 of 60 answered, 26 of 30 off-topic refused) but took about 3 times as long per question and let more unsupported answers through the check (3 of 8, against Qwen's 1). Qwen stays. Still to measure on the Jetson.
 3. Mozilla Human-Scale AI application, due 20 November. Ask at the 12 November session whether a small Qwen qualifies.
 4. Add Class 6 and Class 8 science to the index.
 5. Catch more self-harm statements.
 6. Find a safeguarding reviewer for the replies and helpline numbers.
 7. Test page reading with the camera in the full loop. Picking one question off a page is built, and tested only on sample text and one image.
-8. Fine-tune the answer check. Qwen's refusal fine-tune is on hold.
+8. Fine-tune the answer check, using `training/build_hard_negatives.py`. Qwen's refusal fine-tune is on hold.
 9. Decide on a battery, and finish the case and talk button.
 10. Later: profiles that make the module reusable for other jobs.
 

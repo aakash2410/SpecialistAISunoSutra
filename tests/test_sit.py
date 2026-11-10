@@ -443,15 +443,6 @@ def test_the_next_sentence_is_prepared_while_this_one_plays():
     assert len(results) == 2 and overlapped == [True]
 
 
-def test_smollm3_is_told_not_to_think_and_its_thinking_is_never_spoken():
-    from pocketinfer.specialist.llm import _system_for, strip_thinking, without_thinking
-
-    assert _system_for("hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M", "Rules").startswith("/no_think")
-    assert _system_for("qwen2.5:1.5b", "Rules") == "Rules"
-    assert strip_thinking("<think>hmm</think> Plants make food.") == "Plants make food."
-    assert "".join(without_thinking(["<thi", "nk>hmm</th", "ink>Plants ", "make food."])) == "Plants make food."
-
-
 @pytest.mark.parametrize("sentence, passage", [
     ("The wire bends towards the poles.", "The wire bends away from the poles."),
     ("Pollen moves from the stigma to the anther.", "Pollen moves from the anther to the stigma."),

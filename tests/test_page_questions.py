@@ -1,5 +1,11 @@
 """One clean question out of a noisy OCR dump of a textbook page."""
 
+import os
+import shutil
+import subprocess
+
+import pytest
+
 from pocketinfer.specialist.page_questions import (
     clean_ocr, extract_questions_from_ocr, question_from_page, select_question,
 )
@@ -67,6 +73,33 @@ def test_the_selector_is_deterministic_and_honours_an_index():
     assert select_question(questions, 3) == "g h?"
     assert select_question(questions, 9) is None
     assert select_question([]) is None
+
+
+def test_an_unnumbered_heading_is_not_merged_into_the_next_question():
+    found = extract_questions_from_ocr("अभ्यास\nकुछ शीर्षक\n1. पत्तियाँ हरी क्यों होती हैं?")
+    assert found == ["पत्तियाँ हरी क्यों होती हैं?"]
+
+
+def test_a_garbled_hindi_question_is_passed_over():
+    assert select_question(["Tear हरी क्यों होती हैं?", "स्वपोषी में अंतर समझाइए।"]) == "स्वपोषी में अंतर समझाइए।"
+
+
+def test_questions_survive_real_ocr_of_a_noisy_page(tmp_path):
+    pil = pytest.importorskip("PIL.Image")
+    from PIL import ImageDraw, ImageFilter, ImageFont
+
+    font = "/System/Library/Fonts/Supplemental/Times New Roman.ttf"
+    if not shutil.which("tesseract") or not os.path.exists(font):
+        pytest.skip("Needs Tesseract and a system font")
+    image = pil.new("L", (1400, 700), 245)
+    draw = ImageDraw.Draw(image)
+    for i, line in enumerate(["42", "Chapter 3 Nutrition in Plants", "Fig. 3.1 A leaf", "1. What is photosynthesis?",
+                              "2. Why do leaves appear green?", "3. Define autotrophic nutrition."]):
+        draw.text((70, 40 + i * 100), line, font=ImageFont.truetype(font, 44), fill=25)
+    path = tmp_path / "page.png"
+    image.rotate(0.7, fillcolor=245).filter(ImageFilter.GaussianBlur(0.8)).save(path)
+    text = subprocess.run(["tesseract", str(path), "stdout", "-l", "eng"], capture_output=True, text=True).stdout
+    assert question_from_page(text) == "Why do leaves appear green?"
 
 
 def test_exactly_one_question_goes_on():

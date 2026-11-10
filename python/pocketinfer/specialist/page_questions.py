@@ -54,13 +54,16 @@ def extract_questions_from_ocr(text: str) -> List[str]:
     """The separate questions on a page, in reading order."""
     # Join wrapped lines into numbered items, or into paragraphs when nothing is numbered.
     blocks: List[str] = []
+    in_item = False
     for line in clean_ocr(text):
         if _ITEM_START.match(line):
             blocks.append(_strip_number(line))
-        elif blocks and not re.search(r"[?।!.:]$", blocks[-1]):
-            blocks[-1] += " " + line
+            in_item = True
+        elif blocks and not re.search(r"[?।!.:]$", blocks[-1]) and (in_item or line[0].islower()):
+            blocks[-1] += " " + line                                     # a wrapped line
         else:
             blocks.append(line)
+            in_item = False
     found: List[str] = []
     for block in blocks:
         for sentence in _SENTENCE.split(block):
@@ -76,7 +79,11 @@ def select_question(questions: List[str], index: Optional[int] = None) -> Option
         return None
     if index is not None:
         return questions[index] if 0 <= index < len(questions) else None
-    return questions[(len(questions) - 1) // 2]
+    # On a Hindi page, Latin letters inside a question usually mean OCR garbled it.
+    hindi = sum(bool(re.search(rf"[{_DEV}]", q)) for q in questions) * 2 > len(questions)
+    clean = [q for q in questions if not re.search("[A-Za-z]", q)] if hindi else questions
+    pool = clean or questions
+    return pool[(len(pool) - 1) // 2]
 
 
 def question_from_page(text: str, index: Optional[int] = None) -> str:
