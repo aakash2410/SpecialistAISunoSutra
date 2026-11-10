@@ -19,6 +19,7 @@ This role installs the full software pipeline on a Jetson running JetPack 6, and
 | Hardware settings | `/etc/default/specialist` |
 | Camera rules | `/etc/udev/rules.d/99-specialist-devices.rules` |
 | Boot check | `specialist-boot-check` service |
+| Voice loop at boot | `specialist-voice` service, started by the talk button |
 
 ## Install
 
@@ -57,6 +58,10 @@ Change these in the inventory or with `-e`. The full list is in `ansible/roles/s
 | `specialist_mic_device`, `specialist_speaker_device` | Choose the microphone and speaker, by ALSA card name from `arecord -L` and `aplay -L` |
 | `specialist_camera_vendor`, `specialist_camera_product` | Point the camera settings at a different USB camera, using its IDs from `lsusb` |
 | `specialist_assets_dir` | Reuse files you have already downloaded |
+| `specialist_voice_autostart` | Start the voice loop at boot. Set to `false` to run it only by hand |
+| `specialist_voice_in_lang`, `specialist_voice_out_lang` | The languages of the loop started at boot, `hi` by default |
+| `specialist_trigger` | The talk button: `key` for any USB keyboard or keypad (Enter), or `gpio` for a touch sensor |
+| `specialist_gpio_chip`, `specialist_gpio_line` | With `gpio`, the chip and line the sensor's signal is wired to |
 
 To update only the syllabus:
 
@@ -90,6 +95,27 @@ specialist-voice --in-lang en --out-lang en --from-image page.jpg
 
 `--no-speak` prints the answer without playing it. Each answer prints how long every step took, under `[steps]`.
 
+Saying "repeat that" or "दोबारा बोलो" plays the last answer again. Saying "slower" or "धीरे बोलो" plays it at 80% speed, with a pause after each sentence for writing it down. Neither asks the question again.
+
+## The talk button
+
+At boot the voice loop starts as the `specialist-voice` service. It doesn't use the terminal, so press the talk button to start recording and again to stop. A rising beep means it's listening, and a falling beep means it stopped. Recording stops by itself after 30 seconds.
+
+- **USB keyboard or keypad (`key`, the default):** press Enter. Any keyboard works, plugged in before or after boot.
+- **Touch sensor (`gpio`):** wire the sensor's power to a 3.3 V pin, never 5 V, its ground to a ground pin and its signal to a GPIO pin. Find that pin's chip and line with `gpioinfo`, then install with `-e specialist_trigger=gpio -e specialist_gpio_chip=gpiochip0 -e specialist_gpio_line=<line> --tags boot`.
+
+To watch it, or stop it before running `specialist-voice` by hand or running the tests:
+
+```bash
+journalctl -u specialist-voice -f
+```
+
+```bash
+sudo systemctl stop specialist-voice
+```
+
+It starts again at the next boot, or with `sudo systemctl start specialist-voice`.
+
 ## Every boot
 
 The install sets these up to apply automatically, because they do not survive a reboot on their own:
@@ -104,7 +130,7 @@ The boot check then waits for the services, loads the answer model and looks for
 journalctl -u specialist-boot-check -b --no-pager | tail -12
 ```
 
-It ends in `READY`, or `NOT READY` with the problems listed above it. The voice loop itself does not start at boot, because it still needs someone to press Enter.
+It ends in `READY`, or `NOT READY` with the problems listed above it. The voice loop service starts after it.
 
 ## Power mode
 
@@ -123,11 +149,11 @@ sudo jetson_clocks
 Stop the services and remove the install folder:
 
 ```bash
-sudo systemctl disable --now bhashini_models specialist-boot-check
+sudo systemctl disable --now specialist-voice bhashini_models specialist-boot-check
 ```
 
 ```bash
-sudo rm -rf /opt/specialist /usr/local/bin/specialist-voice /usr/local/bin/specialist-boot-check /usr/local/bin/specialist-usb-power /etc/default/specialist /etc/udev/rules.d/99-specialist-devices.rules /etc/systemd/system/bhashini_models.service /etc/systemd/system/specialist-boot-check.service
+sudo rm -rf /opt/specialist /usr/local/bin/specialist-voice /usr/local/bin/specialist-boot-check /usr/local/bin/specialist-usb-power /etc/default/specialist /etc/udev/rules.d/99-specialist-devices.rules /etc/systemd/system/bhashini_models.service /etc/systemd/system/specialist-boot-check.service /etc/systemd/system/specialist-voice.service
 ```
 
 Ollama and the system packages stay installed.

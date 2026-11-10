@@ -9,6 +9,11 @@ Memory lives only in the running process and is never written to disk. It clears
 3 minutes of silence, when someone says "new topic" or "नया सवाल", when the device
 restarts, and after any question the safety check flags, because a shared classroom
 device should not carry one person's words into the next person's turn.
+
+It also keeps the audio of the last answer, so "repeat that" or "slower" can replay it
+without asking again, for a teacher taking notes. That audio clears with the rest of the
+memory. The one exception is a safety reply: it is the device's own fixed words, so it can
+be repeated, while the question that caused it is forgotten.
 """
 
 from __future__ import annotations
@@ -17,7 +22,7 @@ import re
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Callable, Deque, Iterator, Optional
+from typing import Callable, Deque, Iterator, List, Optional
 
 IDLE_SECONDS = 180
 MAX_TURNS = 3
@@ -28,6 +33,22 @@ _RESET = re.compile(
     r"^\W*(new topic|new question|start again|start over|नया सवाल|नया विषय|नया टॉपिक)\W*$",
     re.IGNORECASE,
 )
+# Whole-utterance commands only, so "Why is the sky blue again?" is still a question.
+_PLEASE = r"(please\s+|कृपया\s+)?"
+_REPEAT = re.compile(
+    r"^\W*" + _PLEASE + r"(repeat( that| it| the answer)?|say (that|it) again|tell me again|again|once more|"
+    r"one more time|pardon|what did you say|दोबारा( से)?( बोलो| बोलिए| बताओ| बताइए| सुनाओ| सुनाइए)?|"
+    r"फिर से( बोलो| बोलिए| बताओ| बताइए| सुनाओ| सुनाइए)?|एक बार और( बोलो| बोलिए| बताओ| बताइए)?|दोहराओ|दोहराइए)"
+    r"(\s+please)?\W*$",
+    re.IGNORECASE,
+)
+_SLOWER = re.compile(
+    r"^\W*" + _PLEASE + r"(slower|slowly|slow down|more slowly|(say|repeat|speak|tell me) (that |it )?"
+    r"(again )?(more )?slow(ly|er)|(धीरे|धीमे)( से| से फिर से| से दोबारा)?( बोलो| बोलिए| बताओ| बताइए| सुनाओ| सुनाइए)?)"
+    r"(\s+please)?\W*$",
+    re.IGNORECASE,
+)
+
 # A question that leans on what came before: a pointing word, or too short to stand alone.
 _REFERS = re.compile(
     r"\b(it|its|they|them|their|this|that|these|those|he|she|him|her|there|also|another|"
@@ -58,13 +79,33 @@ class Session:
         self.last_used = clock()
         self.last_rewrite: Optional[str] = None
         self.last_rewrite_seconds = 0.0
+        self.last_audio: List[bytes] = []
+        self.last_text: List[str] = []
 
     @staticmethod
     def is_reset(text: str) -> bool:
         return bool(_RESET.match(text or ""))
 
+    @staticmethod
+    def command(text: str) -> Optional[str]:
+        """Return "slower" or "repeat" when the whole utterance asks for one, otherwise None."""
+        if _SLOWER.match(text or ""):
+            return "slower"
+        if _REPEAT.match(text or ""):
+            return "repeat"
+        return None
+
     def clear(self) -> None:
         self.turns.clear()
+        self.last_audio, self.last_text = [], []
+
+    def keep_last(self, results) -> None:
+        """Keep what was just said, so it can be repeated. Call after the answer is spoken."""
+        said = [r for r in results if (r.spoken_text or "").strip()]
+        if said:
+            self.last_text = [r.spoken_text for r in said]
+            self.last_audio = [r.audio for r in said if r.audio]
+            self.last_used = self.clock()
 
     def expire_if_idle(self) -> None:
         if self.clock() - self.last_used > self.idle_seconds:

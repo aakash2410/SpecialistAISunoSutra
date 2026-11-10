@@ -7,5 +7,11 @@
 set -a
 . /etc/default/specialist
 set +a
+# Run by hand while the voice service is running, both would compete for the microphone
+# and memory. systemd sets INVOCATION_ID for the service itself.
+if [ -z "$INVOCATION_ID" ] && systemctl is-active --quiet specialist-voice 2>/dev/null; then
+    echo "Note: the voice loop service is running. For the live mic, or to free memory, stop it first:" >&2
+    echo "  sudo systemctl stop specialist-voice" >&2
+fi
 cd {{ specialist_root }}/app || exit 1
 exec {{ specialist_venv }}/bin/python -W ignore -m local.voice_loop --ollama-model {{ specialist_llm_model }} "$@"

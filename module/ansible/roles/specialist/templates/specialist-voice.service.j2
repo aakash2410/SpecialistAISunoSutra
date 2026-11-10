@@ -1,0 +1,22 @@
+[Unit]
+Description=The Specialist voice loop
+# The boot check loads the answer model first, so the first question is not slow.
+After=specialist-boot-check.service ollama.service bhashini_models.service sound.target
+Wants=specialist-boot-check.service
+
+[Service]
+Type=simple
+User={{ specialist_user }}
+ExecStart=/usr/local/bin/specialist-voice --in-lang {{ specialist_voice_in_lang }} --out-lang {{ specialist_voice_out_lang }}
+Environment=PYTHONUNBUFFERED=1
+# Set here, not in /etc/default/specialist, so specialist-voice run by hand still uses Enter.
+Environment=SPECIALIST_TRIGGER={{ specialist_trigger }}
+{% if specialist_gpio_chip %}
+Environment=SPECIALIST_GPIO_CHIP={{ specialist_gpio_chip }}
+Environment=SPECIALIST_GPIO_LINE={{ specialist_gpio_line }}
+{% endif %}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

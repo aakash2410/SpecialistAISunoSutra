@@ -39,3 +39,15 @@ specialist_min_free_gb: 15
 
 # A question the installed corpus covers, used by the final checks.
 specialist_verify_question: What is photosynthesis?
+
+# The voice loop starts at boot and listens for the talk button. Set to false to run it
+# only by hand with specialist-voice, for example while testing.
+specialist_voice_autostart: true
+specialist_voice_in_lang: hi
+specialist_voice_out_lang: hi
+# What starts and stops recording: key (any USB keyboard or keypad, Enter) or gpio (touch
+# sensor on the 40-pin header). For gpio, set the chip and line that gpioinfo shows for the
+# pin the sensor's signal is wired to.
+specialist_trigger: key
+specialist_gpio_chip: ""
+specialist_gpio_line: ""

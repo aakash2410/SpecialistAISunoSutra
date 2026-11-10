@@ -22,7 +22,7 @@ A test that needs something this machine lacks skips and names it. A full pass n
 | Where | When | Result |
 |---|---|---|
 | Jetson, full stack, each test in its own process | 6 November 2026 | 113 passed, 1 expected failure, 1 unexpected pass, 2 skipped. Lowest free memory 2,766 MB |
-| Mac | 9 November 2026, with the safety, answer check, page reading and air-gap work | 138 passed, 19 skipped, 2 expected failures |
+| Mac | 10 November 2026, with the talk button, the voice service and "repeat" and "slower" | 171 passed, 20 skipped, 2 expected failures |
 
 The Hindi voice loop timing test first failed because `local/` had not been copied to the Jetson, so it ran old code. After copying it, the test passed. The unexpected pass is "how do I cook food" now being refused; it stays marked as an expected failure until it passes again. The Jetson skips are two harvest tests that need PyMuPDF, which only runs off the device. The Mac skips are tests that need Bhashini or the Jetson.
 
@@ -32,6 +32,12 @@ To copy the current tests and code to the Jetson, from the Mac:
 
 ```bash
 cd "/Users/aakashsangani/Desktop/Suno-Sutra-SW/Specialist v1" && rsync -aR --exclude __pycache__ --exclude .DS_Store --exclude local/models python tests local ingest tools suno-sutra@suno-sutra:~/specialist/
+```
+
+Stop the voice loop service first, so the tests have the microphone and memory to themselves. It starts again at the next boot:
+
+```bash
+sudo systemctl stop specialist-voice
 ```
 
 To run every test in its own process on the Jetson, with pytest installed outside the app's environment in `~/pt`:

@@ -78,13 +78,19 @@ Follow-ups are rewritten from the last 3 turns, then go through every step. Memo
 
 ## Run it
 
-Install steps are in [module/README.md](module/README.md). Then, on the Jetson:
+Install steps are in [module/README.md](module/README.md). After the install, the loop starts at boot. Press the talk button (Enter on any USB keyboard, or a touch sensor) to record, and press it again to stop. Say "repeat that" or "slower" to hear the last answer again.
+
+To run it by hand on the Jetson, stop the service first, then press Enter in the terminal to record:
+
+```bash
+sudo systemctl stop specialist-voice
+```
 
 ```bash
 specialist-voice --in-lang hi --out-lang hi
 ```
 
-Press Enter to start recording and Enter again to stop. To type a question:
+To type a question:
 
 ```bash
 specialist-voice --no-speak --text "What is photosynthesis?"

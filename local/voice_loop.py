@@ -162,6 +162,34 @@ class LoopHarness:
         print(f"[2 MT  ] {self.in_lang}->en -> {query_en!r}")
         return query_en
 
+    NOTHING_TO_REPEAT = {"en": "There is nothing to repeat yet. Please ask a question.",
+                         "hi": "अभी दोहराने के लिए कुछ नहीं है। कृपया एक सवाल पूछिए।"}
+
+    def _replay(self, command: str) -> bool:
+        """Say the last answer again, slower and with pauses if asked, without asking again."""
+        self.session.expire_if_idle()
+        if not self.session.last_text:
+            text = self.NOTHING_TO_REPEAT.get(self.out_lang, self.NOTHING_TO_REPEAT["en"])
+            print(f"[{command}] nothing to repeat yet")
+            if self.tts_provider is not None:
+                from local.audio import play_wav_bytes
+
+                play_wav_bytes(self.tts_provider.synthesize(text, self.out_lang))
+            return True
+        slow = command == "slower"
+        print(f"[{command}] saying the last answer again{' slowly' if slow else ''}:")
+        for text in self.session.last_text:
+            print(f"   · {text}")
+        if self.tts_provider is not None:
+            from local.audio import SLOW_GAP_SECONDS, play_wav_bytes, slow_wav_bytes
+
+            for audio in self.session.last_audio:
+                play_wav_bytes(slow_wav_bytes(audio) if slow else audio)
+                if slow:
+                    time.sleep(SLOW_GAP_SECONDS)
+        self.session.last_used = self.session.clock()
+        return True
+
     def run_once(self, mic) -> bool:
         from local.audio import play_wav_bytes
         from pocketinfer.specialist import speak_stream
@@ -178,11 +206,18 @@ class LoopHarness:
             self.session.clear()
             print("[session] new topic, earlier questions forgotten")
             return True
+        # Checked before translation, so a Hindi "दोबारा बोलो" replays at once.
+        command = self.session.command(raw)
+        if command:
+            return self._replay(command)
         query_en = self._translate_query(raw, T)
         if self.session.is_reset(query_en):
             self.session.clear()
             print("[session] new topic, earlier questions forgotten")
             return True
+        command = self.session.command(query_en)
+        if command:
+            return self._replay(command)
 
         header = {"printed": False}
 
@@ -212,6 +247,7 @@ class LoopHarness:
             play_fn, on_sentence,
         )
 
+        self.session.keep_last(results)
         if speaking:
             T["first_audio"] = first_audio
         T["TOTAL"] = time.time() - t0
@@ -237,12 +273,22 @@ class LoopHarness:
 
         # Live mic loop.
         from local.audio import AlsaArecordMic
+        from local.triggers import make_trigger
 
-        mic = AlsaArecordMic(self.args.mic_device)
-        print("\n== Specialist voice loop == (Ctrl-C to quit)")
+        trigger = None if self.args.trigger == "enter" else make_trigger(
+            self.args.trigger, self.args.gpio_chip, self.args.gpio_line)
+        mic = AlsaArecordMic(self.args.mic_device, trigger=trigger)
+        print(f"\n== Specialist voice loop == trigger={self.args.trigger} (Ctrl-C to quit)", flush=True)
         try:
             while True:
-                once(mic)
+                try:
+                    once(mic)
+                except KeyboardInterrupt:
+                    raise
+                except Exception:  # noqa: BLE001
+                    # One failed question (a service restarting, a bad recording) must not
+                    # stop the device: log it and wait for the next press.
+                    logging.exception("this question failed, waiting for the next one")
         except KeyboardInterrupt:
             print("\nbye.")
 
@@ -258,6 +304,14 @@ def main():
                     help="with --from-image, which question on the page to use, from 0 (default: the middle one)")
     ap.add_argument("--mic-device", default=os.environ.get("SPECIALIST_MIC_DEVICE", "plughw:1,0"),
                     help="ALSA capture device for the live mic (find it with arecord -l)")
+    ap.add_argument("--trigger", default=os.environ.get("SPECIALIST_TRIGGER", "enter"),
+                    help="what starts and stops recording on the live mic: enter (terminal), "
+                         "key (any USB keyboard or keypad, no terminal needed) or gpio (touch sensor)")
+    ap.add_argument("--gpio-chip", default=os.environ.get("SPECIALIST_GPIO_CHIP"),
+                    help="with --trigger gpio, the chip from gpioinfo, e.g. gpiochip0")
+    ap.add_argument("--gpio-line", type=int, default=(int(os.environ["SPECIALIST_GPIO_LINE"])
+                                                      if os.environ.get("SPECIALIST_GPIO_LINE") else None),
+                    help="with --trigger gpio, the line number from gpioinfo")
     # providers (swappable)
     ap.add_argument("--asr", default="auto", help="auto|whisper|bhashini")
     ap.add_argument("--mt", default="bhashini", help="bhashini|none")

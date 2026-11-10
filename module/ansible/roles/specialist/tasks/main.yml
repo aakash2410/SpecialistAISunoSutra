@@ -411,6 +411,43 @@
     enabled: true
     daemon_reload: true
 
+- name: Install the GPIO tools, for a touch sensor as the talk button
+  tags: [boot]
+  become: true
+  ansible.builtin.apt:
+    pkg: gpiod
+
+- name: List the groups that give access to keys and GPIO
+  tags: [boot]
+  ansible.builtin.getent:
+    database: group
+
+- name: Let the user read the talk button
+  tags: [boot]
+  become: true
+  ansible.builtin.user:
+    name: "{{ specialist_user }}"
+    groups: "{{ ['input', 'audio', 'gpio'] | select('in', ansible_facts.getent_group) | list }}"
+    append: true
+
+- name: Install the voice loop service
+  tags: [boot]
+  become: true
+  ansible.builtin.template:
+    src: specialist-voice.service.j2
+    dest: /etc/systemd/system/specialist-voice.service
+    mode: "0644"
+
+# Restarted so a reinstall runs the new code and settings.
+- name: Start the voice loop at boot
+  tags: [boot]
+  become: true
+  ansible.builtin.systemd:
+    name: specialist-voice
+    enabled: "{{ specialist_voice_autostart | bool }}"
+    state: "{{ 'restarted' if specialist_voice_autostart | bool else 'stopped' }}"
+    daemon_reload: true
+
 # --------------------------------------------------------------------- content
 # Content is separate from code, so the syllabus can change on its own: --tags content
 - name: Install the DIKSHA index
@@ -421,6 +458,15 @@
     mode: "0644"
 
 # ---------------------------------------------------------------------- verify
+# The checks load every model again, so pause the voice loop to keep memory free.
+- name: Pause the voice loop during the checks
+  tags: [verify]
+  become: true
+  ansible.builtin.systemd:
+    name: specialist-voice
+    state: stopped
+  failed_when: false
+
 - name: Wait for Ollama and Bhashini
   tags: [verify]
   ansible.builtin.wait_for:
@@ -460,6 +506,15 @@
     tesseract --list-langs | tail -n +2 | tr '\n' ' '
   register: specialist_check_tools
   changed_when: false
+
+- name: Restart the voice loop
+  tags: [verify]
+  become: true
+  ansible.builtin.systemd:
+    name: specialist-voice
+    state: started
+  when: specialist_voice_autostart | bool
+  failed_when: false
 
 - name: Show the results
   tags: [verify]
