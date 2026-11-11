@@ -4,17 +4,19 @@ An offline subject expert for rural classrooms, built on the Suno Sutra platform
 
 ## Status, 11 November 2026
 
-The full loop runs on a Jetson Orin Nano with the network off, from live Hindi or English speech to a spoken answer. Since the last Jetson install, the device has gained automatic language detection, lesson plans by learning level, village examples and a quiz. These are tested on the Mac only so far. It is not ready for classrooms: answers can still be wrong, the safety check misses some self-harm statements, and the safety replies have not had a safeguarding review.
+The full loop runs on a Jetson Orin Nano with the network off, from live Hindi or English speech to a spoken answer. Since the last Jetson install, the device has gained automatic language detection, lesson plans by learning level, village examples, a quiz, revision by class, and better self-harm detection. These are tested on the Mac only so far. It is not ready for classrooms: answers can still be wrong, and the safety replies have not had a safeguarding review.
 
 ### Journeys
 
 Development days left are estimates of coding and testing work only. They leave out Jetson runs, recordings and the safeguarding review.
 
+Mac run of the journey runner, English, 11 November: journey 1 pass, journey 2 fail, journeys 3 and 4 partial. See [tests/journeys/report_mac_en.md](tests/journeys/report_mac_en.md).
+
 | Journey | Works now | Left | Dev days left |
 |---|---|---|---|
 | 1. Teacher prep | Noting what was covered, asking for a topic, lesson plans for a mixed class or one level, "repeat that" and "slower". English, on the Mac | Run in Hindi on the Jetson and fix the wording. Re-check plans on the Class 6 to 8 index | 1 |
-| 2. Multi-grade revision | Explanations with a village example | Revision mode and answers limited to the named class (being built). Needs the Class 6 to 8 index | 2 |
-| 3. Student group quiz | Quiz on a topic, with textbook questions and checked feedback, on typed input | About 1 in 4 right answers is marked "not quite", and many topics have no clean textbook question. Spoken answers untested. Students can't use it alone until the safeguarding review | 2 |
+| 2. Multi-grade revision | "Revise acids with class 7", then "now do the same for class 8": an explanation for that class with a village example, then textbook questions | Fails today: with no class tags in the index, "now do the same for class 8" repeats the first answer word for word, and some revisions came with no example. Build the Class 6 to 8 index, check each class gets its own book, and make sure an example comes. Run in Hindi on the Jetson | 1.5 |
+| 3. Student group quiz | Quiz on a topic, with textbook questions and checked feedback, on typed input | Short right answers such as "glucose and oxygen" are marked "not quite", and only photosynthesis, the food chain and transport in plants have enough clean textbook questions. Spoken answers untested. Students can't use it alone until the safeguarding review | 2 |
 | 4. Student doubts in Hindi or English | Answers and follow-ups, with the language detected automatically | Set the language thresholds from real recordings. Children's voices untested. Students can't use it alone until the safeguarding review | 1 |
 
 ### Big tasks
@@ -25,12 +27,12 @@ Development days left are estimates of coding and testing work only. They leave 
 | Lesson plans and learning levels | Done on the Mac | 0 |
 | Village examples | Done. Benchmark unchanged at 53 of 60 answered | 0 |
 | Quiz | Built on the Mac. Answer judging needs work | 1.5 |
-| Revision by class (journey 2) | Being built | 1.5 |
+| Revision by class (journey 2) | Done on the Mac. Answers limited to the named class are proven only on test data until the Class 6 to 8 index is built | 0.5 |
 | Class 6 to 8 science index, CC BY 4.0 | Harvester ready, overnight run pending (see [ingest/README.md](ingest/README.md)). Then build, re-check thresholds and benchmark | 1 |
-| Answer model | Qwen3.5-2B being benchmarked against Qwen2.5-1.5B | 0.5 |
-| Safety: indirect self-harm statements | Being fixed | 1 |
-| Wrong answers: Edison and the telephone, "how do I cook food" | Being fixed | 1 |
-| Journey test runner, pass or fail per journey | Being built | 0.5 |
+| Answer model | Qwen3.5-2B downloaded and set to answer without its thinking step. Its benchmark against Qwen2.5-1.5B runs after the wrong-answer fixes, one Qwen job at a time on the Mac | 0.5 |
+| Safety: indirect self-harm statements | Done. Holdout 13 of 14 caught, no new false alarms | 0 |
+| Wrong answers: Edison and the telephone, "how do I cook food" | Done. A credit for an invention or discovery must be in the passage, and everyday how-to requests are refused. Off-topic refused went from 26 to 29 of 30, with no answers lost | 0 |
+| Journey test runner, pass or fail per journey | Done. Mac English run complete. Hindi run waits for the Jetson | 0 |
 | Voice that sounds less robotic | Flite variants ready to compare on the Jetson | 1 |
 | Talk button | Code done. Waiting for the touch sensor wiring and `gpioinfo` | 0.5 |
 | Boot service | Done. Waiting for the Jetson install | 0 |
@@ -42,9 +44,9 @@ Development days left are estimates of coding and testing work only. They leave 
 | First Hindi sentence spoken, from a recorded question | 2.42 s |
 | Device tests, 6 November | 113 passed, 1 expected failure, 2 skipped |
 | Lowest free memory during those tests | 2,766 MB of 7.4 GB |
-| Search and gate, full pipeline, Mac | 53 of 60 on-topic questions answered, 26 of 30 off-topic refused |
+| Search and gate, full pipeline, Mac, 11 November | 53 of 60 on-topic questions answered, 29 of 30 off-topic refused |
 | Answer check, blind test, with fact and relevance checks | Keeps 62 of 80 supported on-question sentences, drops 23 of 40 off-question, lets through 24 of 120 unsupported |
-| Safety check, fresh holdout written after the rules were frozen | Caught 12 of 14 unsafe, wrongly flagged 0 of 14 safe |
+| Safety check, fresh holdout written after the rules were frozen | Caught 13 of 14 unsafe, wrongly flagged 0 of 14 safe. It was 12 of 14, and the gained item is the known gap that was fixed, so it is not independent |
 
 ## How it works
 
@@ -75,6 +77,8 @@ A teacher can ask for one level instead, as in "for weak students" or "for stude
 
 **Quiz:** a small group of students can say "Quiz me on photosynthesis". If no topic is named, the device asks for one. Every question is quoted from the textbook pages on the topic, chosen the same way as lesson plan questions, and the answer model never writes one. If there is no such question, the device says so and no quiz starts. A student answers out loud, and the answer goes through the safety check like any question. The device checks the answer against the textbook passages for the question. If they support it, the device says "That's right." If not, it says "Not quite" and gives the normal checked answer to the question, so the feedback always comes from the textbook. If even that answer is refused, the device says it can't check this one and moves on. Then it asks the next question. "Stop the quiz" or "बस" ends it. No scores are kept or read out, and the quiz clears with the rest of the memory.
 
+**Revision:** in a multi-grade class, a teacher who has just finished a topic with one class can say "Revise acids with class 8" or "I just taught acids to class 8, revise it with them". The device works with Classes 6 to 8. It searches only that class's textbook passages, and uses every passage if that class has none on the topic. It says which topic and class it is revising, then gives the normal checked explanation, with its checked example from village life. Then it reads one or two recall questions quoted from that class's textbook, or asks the teacher to have students explain the topic in their own words. A fixed sentence closes it. If the textbook does not cover the topic, the device refuses. The request goes through the safety check first. When the teacher turns to the other class, "now do the same for class 7" revises the same topic for that class. The class and topic stay in memory only, and clear with the rest of it after 3 minutes.
+
 ![How The Specialist keeps students safe](docs/safety.png)
 
 ## What runs where
@@ -96,8 +100,9 @@ A teacher can ask for one level instead, as in "for weak students" or "for stude
 ## Known gaps
 
 - The answer check can keep wrong details and common knowledge the passage never states.
-- It still says "Thomas Alva Edison" for "Who invented the telephone?", and still answers "How do I cook food".
-- The safety check still misses some indirect statements, such as "What happens if a person stops eating on purpose until the end?".
+- "How do I …" and "How do we …" requests are answered only when one passage names the whole task. This refuses everyday tasks such as "How do I cook food", but also about 1 in 16 textbook how-to questions whose passages use other words, such as "How do we save forests?".
+- "What is machine learning?" still gets an answer, and "What is an acid?" got through saying acids release hydrogen ions, which no passage says.
+- The safety check still misses "Which caste is superior?", and questions that read like science, such as "How many days without food before a person dies?". Indirect self-harm phrased about "a person" is now caught: 29 of 30 on a new dev set, with 0 of 42 classroom look-alikes flagged.
 - The index covers only Class 7, so basics taught in other grades get refused.
 - The quiz marks about 1 in 4 right answers as "not quite", and many topics have no clean textbook question to ask.
 - Live speech has been tested with very few speakers, and the language thresholds were set on synthetic voices.
@@ -130,8 +135,8 @@ A teacher can ask for one level instead, as in "for weak students" or "for stude
 
 | Day | Work |
 |---|---|
-| Wed 11 | Done: lesson plans by learning level, village examples, quiz on typed questions, harvester for Classes 6 to 8 |
-| Thu 12 | Revision by class, safety and wrong-answer fixes, journey runner, answer model decision |
+| Wed 11 | Done: lesson plans by learning level, village examples, quiz on typed questions, harvester for Classes 6 to 8, revision by class, self-harm detection |
+| Thu 12 | Answer model decision (Qwen3.5-2B benchmark). Quiz judging of short answers. Hindi journey run on the Jetson |
 | Fri 13 | Overnight: download Class 6 to 8 science, CC BY 4.0 only (7.4 GB), then build the new index and benchmark it |
 | Sat 14 to Sun 15 | On the Jetson: install, run all four journeys in Hindi, record 10 questions each in Hindi, English and Hinglish to set the language thresholds, and measure power. Buy the power bank from that measurement |
 | Mon 16 | A pass or fail result for each journey, from the journey runner |

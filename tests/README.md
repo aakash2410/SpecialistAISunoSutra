@@ -74,6 +74,26 @@ Never change a rule because of a specific item in `tests/safety/holdout.json`. F
 /opt/specialist/venv/bin/python -W ignore tests/benchmark/tts_variants.py
 ```
 
+## User journeys
+
+`journeys/run_journeys.py` runs the four user journeys from Honey's "Tentative User Journey for Doosri Aawaz" (teacher prep, multi-grade revision, student group quiz, student home-language doubts) and gives each one PASS, PARTIAL or FAIL. The scripts are in `journeys/journeys.json`: two or three variants per journey in English and at least one in Hindi, each a list of typed turns with checks on behaviour (a lesson plan, a quiz verdict, an answer in Hindi, a replay of the last answer), never on exact words. Every turn goes through the voice loop's own `LoopHarness`, so it takes the device's real path after speech recognition, with real retrieval, Qwen, the answer check and the safety check. The engine loads once and is reused for every journey.
+
+A variant fails when a turn marked `core` fails, and is partial when only other turns fail. A journey passes when every variant passes. J4 is about a student's home language, so in English it is at best partial. The report lists each failing turn with what the device said and why it failed.
+
+On the Mac, in English, with Ollama running (about 3 minutes on 11 November, longer when Ollama is busy):
+
+```bash
+python3 -W ignore tests/journeys/run_journeys.py --lang en --out tests/journeys/report_mac_en.md
+```
+
+`--journey J3` or `--variant J3-en-a` runs part of it, and `--json` saves every turn. On the Jetson, in Hindi, after copying `python`, `tests` and `local` across (the rsync command above) and stopping the voice loop service:
+
+```bash
+cd ~/specialist && PYTHONPATH=python:. /opt/specialist/venv/bin/python -W ignore tests/journeys/run_journeys.py --lang hi --out ~/journeys_hi.md
+```
+
+`--lang en` works on the Jetson too. Hindi needs Bhashini, so the runner stops at once if it is not answering.
+
 ## Test files
 
 `fixtures/` holds a spoken English question, a spoken Hindi question and an image of a printed question. These are clean and synthetic: the WAV files use a macOS voice and the image is computer-rendered, so they do not show how well the device handles real classroom speech or camera photos. Live tests with the Arducam microphone and camera are recorded in the main [README](../README.md).

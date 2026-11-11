@@ -1,0 +1,292 @@
+{
+  "source": "Honey, Tentative User Journey for Doosri Aawaz. Turns are typed, as if after speech recognition.",
+  "how_to_read": "Each turn has 'say' and 'expect'. Words in contains checks are never the topic's own name, which the device's fixed sentences repeat. expect keys: kind (one or a list of: lesson_plan, noted, asks_topic, revision, grade_not_covered, answer, refusal, safety, quiz_question, quiz_none, quiz_feedback, quiz_end, replay, nothing_to_repeat, reset), refused, contains_any / contains_all / not_contains (checked on the English text of the reply, case-insensitive), language (script of what is spoken and the answer language), min_sentences, has_example, cited, verdict (right, not_quite, cant_check), quiz_next (next, end), same_as_turn / differs_from_turn / example_differs_from_turn (turn numbers from 0). A turn marked core must pass for the journey to go on. Expected facts are only ones the Class 7 index supports.",
+  "journeys": [
+    {
+      "id": "J1",
+      "name": "Teacher prep",
+      "description": "A teacher says what the class covered, asks for a lesson plan for the next class, clears up doubts, takes notes with \"repeat that\" and \"slower\", and uses the plan.",
+      "variants": [
+        {
+          "id": "J1-en-a",
+          "lang": "en",
+          "title": "Photosynthesis after nutrition in plants, with a doubt and a follow-up",
+          "probes": "Recap from the teacher's words, a three-level plan, a doubt, a follow-up that leans on it, and both note-taking commands.",
+          "turns": [
+            {"say": "Yesterday we covered nutrition in plants.", "core": true,
+             "why": "the device notes what was covered and waits for the plan request",
+             "expect": {"kind": "noted", "refused": false}},
+            {"say": "Give me a lesson plan on photosynthesis for tomorrow's class.", "core": true,
+             "why": "a full plan with the recap, checked key ideas and textbook questions",
+             "expect": {"kind": "lesson_plan", "refused": false, "contains_all": ["nutrition in plants"],
+                        "contains_any": ["chlorophyll", "sunlight", "carbon dioxide"], "min_sentences": 6, "cited": true}},
+            {"say": "What is chlorophyll?",
+             "why": "a teacher's doubt, answered from the textbook",
+             "expect": {"kind": "answer", "refused": false, "contains_any": ["green", "pigment"]}},
+            {"say": "Why do leaves need it to make food?",
+             "why": "a follow-up that only makes sense with the last turn",
+             "expect": {"kind": "answer", "refused": false, "contains_any": ["sunlight", "light", "energy"]}},
+            {"say": "Repeat that.", "core": true,
+             "why": "replays the last answer word for word",
+             "expect": {"kind": "replay", "same_as_turn": 3}},
+            {"say": "Slower please.",
+             "why": "replays it again, slower",
+             "expect": {"kind": "replay", "same_as_turn": 3}}
+          ]
+        },
+        {
+          "id": "J1-en-b",
+          "lang": "en",
+          "title": "Plan asked without a topic, then given; doubts on transport in plants",
+          "probes": "The device asks which topic, takes the next turn as the topic, then answers a doubt and repeats it.",
+          "turns": [
+            {"say": "In the last class we finished the food chain.", "core": true,
+             "expect": {"kind": "noted", "refused": false}},
+            {"say": "I need a lesson plan for the next class.", "core": true,
+             "why": "no topic named, so the device should ask for one",
+             "expect": {"kind": "asks_topic"}},
+            {"say": "Transportation in plants.", "core": true,
+             "expect": {"kind": "lesson_plan", "refused": false, "contains_all": ["food chain"],
+                        "contains_any": ["xylem", "phloem", "water", "roots"], "min_sentences": 6}},
+            {"say": "Which part of the plant absorbs water from the soil?",
+             "expect": {"kind": "answer", "refused": false, "contains_any": ["root"]}},
+            {"say": "Say that again.", "core": true,
+             "expect": {"kind": "replay", "same_as_turn": 3}}
+          ]
+        },
+        {
+          "id": "J1-en-c",
+          "lang": "en",
+          "title": "Context and request in one breath, for weaker students",
+          "probes": "A plan for one learning level, asked in the same sentence as the recap, then a doubt and a slower replay.",
+          "turns": [
+            {"say": "We covered photosynthesis last week, now give me a lesson plan on transportation in plants for weak students.", "core": true,
+             "expect": {"kind": "lesson_plan", "refused": false, "contains_all": ["photosynthesis", "need more help"],
+                        "contains_any": ["water", "root", "xylem"]}},
+            {"say": "How does water reach the leaves?",
+             "expect": {"kind": "answer", "refused": false, "contains_any": ["xylem", "stem", "root", "vessel"]}},
+            {"say": "Slowly.", "core": true,
+             "expect": {"kind": "replay", "same_as_turn": 1}}
+          ]
+        },
+        {
+          "id": "J1-hi-a",
+          "lang": "hi",
+          "title": "Hindi: photosynthesis after nutrition in plants",
+          "probes": "The same journey spoken in Hindi: recap noted, plan in Hindi, a doubt, and both note-taking commands in Hindi.",
+          "turns": [
+            {"say": "कल हमने पौधों में पोषण पढ़ाया था।", "core": true,
+             "expect": {"kind": "noted", "refused": false, "language": "hi"}},
+            {"say": "कल की कक्षा के लिए प्रकाश संश्लेषण पर पाठ योजना बना दीजिए।", "core": true,
+             "expect": {"kind": "lesson_plan", "refused": false, "language": "hi",
+                        "contains_any": ["chlorophyll", "sunlight", "carbon dioxide"], "min_sentences": 6}},
+            {"say": "क्लोरोफिल क्या होता है?",
+             "expect": {"kind": "answer", "refused": false, "language": "hi", "contains_any": ["green", "pigment"]}},
+            {"say": "दोबारा बोलो", "core": true,
+             "expect": {"kind": "replay", "same_as_turn": 2, "language": "hi"}},
+            {"say": "धीरे बोलो",
+             "expect": {"kind": "replay", "same_as_turn": 2, "language": "hi"}}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "J2",
+      "name": "Multi-grade revision",
+      "description": "A teacher says the grade, subject and concept just taught, asks the device to revise it with different examples for the students, and later does the same for another grade.",
+      "variants": [
+        {
+          "id": "J2-en-a",
+          "lang": "en",
+          "title": "Class 7 photosynthesis, then the same for class 8",
+          "probes": "Revision with a worked example and textbook questions, then \"now do the same for class 8\", which should give class 8 content rather than the class 7 answer again.",
+          "turns": [
+            {"say": "I just taught class 7 science, photosynthesis. Please revise it with the students using different examples.", "core": true,
+             "expect": {"kind": "revision", "refused": false, "contains_any": ["sunlight", "chlorophyll", "carbon dioxide"], "has_example": true, "cited": true}},
+            {"say": "Now do the same for class 8.", "core": true,
+             "why": "the same topic for another class, from that class's own pages",
+             "expect": {"kind": "revision", "refused": false, "contains_all": ["class 8"], "has_example": true, "differs_from_turn": 0}}
+          ]
+        },
+        {
+          "id": "J2-en-b",
+          "lang": "en",
+          "title": "Class 7 acids, later class 6 separation of substances",
+          "probes": "A short revision request, then another class's own concept, as in a multi-grade room.",
+          "turns": [
+            {"say": "Revise acids with class 7 using different examples.", "core": true,
+             "expect": {"kind": "revision", "refused": false, "contains_any": ["sour", "litmus"], "has_example": true}},
+            {"say": "We just taught class 6 science, separation of substances. Revise it with them using different examples.", "core": true,
+             "why": "a class 6 chapter; the index on this machine is class 7",
+             "expect": {"kind": "revision", "refused": false, "contains_any": ["sieving", "winnowing", "threshing", "handpicking", "filter", "sedimentation", "decantation", "evaporation"], "has_example": true}}
+          ]
+        },
+        {
+          "id": "J2-en-c",
+          "lang": "en",
+          "title": "Class 6 light and shadows, then the same for class 7",
+          "probes": "Revision for a younger class first, then the older class, on a concept both syllabi have.",
+          "turns": [
+            {"say": "I have just taught class 6 science, light and shadows. Revise it with them with new examples.", "core": true,
+             "expect": {"kind": "revision", "refused": false, "contains_any": ["shadow", "opaque", "straight line"], "has_example": true}},
+            {"say": "And for class 7?", "core": true,
+             "expect": {"kind": "revision", "refused": false, "contains_all": ["class 7"], "differs_from_turn": 0}}
+          ]
+        },
+        {
+          "id": "J2-hi-a",
+          "lang": "hi",
+          "title": "Hindi: class 7 photosynthesis, then class 8",
+          "turns": [
+            {"say": "मैंने अभी कक्षा 7 को विज्ञान में प्रकाश संश्लेषण पढ़ाया है। अलग उदाहरणों के साथ इसका रिवीजन कराइए।", "core": true,
+             "expect": {"kind": "revision", "refused": false, "language": "hi", "contains_any": ["sunlight", "chlorophyll", "carbon dioxide"], "has_example": true}},
+            {"say": "अब कक्षा 8 के लिए भी यही रिवीजन कराइए।", "core": true,
+             "expect": {"kind": "revision", "refused": false, "language": "hi", "contains_all": ["class 8"], "differs_from_turn": 0}}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "J3",
+      "name": "Student group quiz",
+      "description": "Students give their grade, subject and chapter, the device asks a question, a student answers, the device checks it and gives feedback, then the next question, until they stop.",
+      "variants": [
+        {
+          "id": "J3-en-a",
+          "lang": "en",
+          "title": "Photosynthesis quiz: one right answer, one wrong, then stop",
+          "probes": "A quiz on the topic with the most clean textbook questions; right and wrong answers judged against the textbook.",
+          "turns": [
+            {"say": "We are class 7 science. Quiz us on photosynthesis.", "core": true,
+             "expect": {"kind": "quiz_question", "contains_any": ["?"], "cited": true}},
+            {"say": "Glucose and oxygen.", "core": true,
+             "why": "right answer to the products question",
+             "expect": {"kind": "quiz_feedback", "verdict": "right", "quiz_next": "next"}},
+            {"say": "Because plants use the energy of sunlight to make food.",
+             "why": "a right answer in the student's own words",
+             "expect": {"kind": "quiz_feedback", "verdict": "right", "quiz_next": "next"}},
+            {"say": "Plants get bigger.",
+             "why": "a wrong answer gets the textbook's answer",
+             "expect": {"kind": "quiz_feedback", "verdict": "not_quite", "refused": false, "min_sentences": 2}},
+            {"say": "Stop the quiz.", "core": true,
+             "expect": {"kind": "quiz_end"}}
+          ]
+        },
+        {
+          "id": "J3-en-b",
+          "lang": "en",
+          "title": "Transport in plants quiz, run to the end",
+          "probes": "A second topic, with mixed answers, until the device closes the quiz itself.",
+          "turns": [
+            {"say": "Class 7 science, chapter transportation in plants. Give us a quiz on transportation in plants.", "core": true,
+             "expect": {"kind": "quiz_question", "contains_any": ["?"], "cited": true}},
+            {"say": "Xylem and phloem.",
+             "expect": {"kind": "quiz_feedback", "verdict": "right"}},
+            {"say": "To carry water, food and oxygen to all parts of the body.",
+             "expect": {"kind": "quiz_feedback", "verdict": "right"}},
+            {"say": "I don't know.",
+             "why": "no answer: the device gives the textbook's answer and moves on",
+             "expect": {"kind": "quiz_feedback", "verdict": "not_quite", "refused": false}},
+            {"say": "The roots.",
+             "expect": {"kind": "quiz_feedback", "verdict": "right"}}
+          ]
+        },
+        {
+          "id": "J3-en-c",
+          "lang": "en",
+          "title": "Students name the chapter, not a topic: Respiration in Organisms",
+          "probes": "Students say grade, subject and chapter as in the journey; the chapter is class 7 chapter 6.",
+          "turns": [
+            {"say": "We are class 7, science, chapter respiration in organisms. Please quiz us.", "core": true,
+             "why": "no topic after 'quiz', so the device may ask for one",
+             "expect": {"kind": ["quiz_question", "asks_topic"]}},
+            {"say": "Respiration in organisms.", "core": true,
+             "why": "a quiz should start on a whole class 7 chapter",
+             "expect": {"kind": "quiz_question"}},
+            {"say": "Oxygen.",
+             "expect": {"kind": "quiz_feedback"}}
+          ]
+        },
+        {
+          "id": "J3-hi-a",
+          "lang": "hi",
+          "title": "Hindi: photosynthesis quiz",
+          "turns": [
+            {"say": "हम कक्षा 7 विज्ञान में हैं। हमें प्रकाश संश्लेषण पर क्विज़ दीजिए।", "core": true,
+             "expect": {"kind": "quiz_question", "language": "hi"}},
+            {"say": "ग्लूकोज़ और ऑक्सीजन", "core": true,
+             "expect": {"kind": "quiz_feedback", "verdict": "right", "language": "hi"}},
+            {"say": "पौधे बड़े हो जाते हैं",
+             "expect": {"kind": "quiz_feedback", "verdict": "not_quite", "language": "hi"}},
+            {"say": "बस", "core": true,
+             "expect": {"kind": "quiz_end", "language": "hi"}}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "J4",
+      "name": "Student home-language doubts",
+      "description": "A student asks in her home language for a concept to be explained, hears the answer in the same language, and asks a follow-up.",
+      "needs_lang": "hi",
+      "cap_note": "The home-language part needs Hindi (Bhashini, on the Jetson); in English only the doubt and follow-up flow is checked.",
+      "variants": [
+        {
+          "id": "J4-en-a",
+          "lang": "en",
+          "title": "Doubt and follow-up on photosynthesis (flow only)",
+          "turns": [
+            {"say": "Please explain photosynthesis.", "core": true,
+             "expect": {"kind": "answer", "refused": false, "language": "en", "contains_any": ["sunlight", "chlorophyll", "carbon dioxide"]}},
+            {"say": "Why do plants need sunlight for it?",
+             "expect": {"kind": "answer", "refused": false, "language": "en", "contains_any": ["energy", "light"]}}
+          ]
+        },
+        {
+          "id": "J4-en-b",
+          "lang": "en",
+          "title": "Doubt and follow-up on acids (flow only)",
+          "turns": [
+            {"say": "What is an acid?", "core": true,
+             "expect": {"kind": "answer", "refused": false, "language": "en", "contains_any": ["sour", "litmus"]}},
+            {"say": "Can you give some examples of them?",
+             "expect": {"kind": "answer", "refused": false, "language": "en", "contains_any": ["vinegar", "lemon", "curd", "orange", "tamarind", "amla", "citric", "acetic", "lactic", "ascorbic", "hydrochloric", "sulphuric", "sulfuric"]}}
+          ]
+        },
+        {
+          "id": "J4-hi-a",
+          "lang": "hi",
+          "title": "Hindi: photosynthesis, then why sunlight",
+          "turns": [
+            {"say": "प्रकाश संश्लेषण क्या होता है? मुझे समझाइए।", "core": true,
+             "expect": {"kind": "answer", "refused": false, "language": "hi", "contains_any": ["sunlight", "chlorophyll", "carbon dioxide", "food"]}},
+            {"say": "पौधों को इसके लिए धूप की ज़रूरत क्यों होती है?", "core": true,
+             "expect": {"kind": "answer", "refused": false, "language": "hi", "contains_any": ["energy", "light", "sun"]}}
+          ]
+        },
+        {
+          "id": "J4-hi-b",
+          "lang": "hi",
+          "title": "Hinglish: acids, then examples",
+          "turns": [
+            {"say": "acid क्या होता है? समझाइए।", "core": true,
+             "expect": {"kind": "answer", "refused": false, "language": "hi", "contains_any": ["sour", "litmus"]}},
+            {"say": "इसके कुछ उदाहरण बताइए।", "core": true,
+             "expect": {"kind": "answer", "refused": false, "language": "hi", "contains_any": ["vinegar", "lemon", "curd", "orange", "tamarind", "amla", "citric", "acetic", "lactic", "ascorbic", "hydrochloric", "sulphuric", "sulfuric"]}}
+          ]
+        },
+        {
+          "id": "J4-hi-c",
+          "lang": "hi",
+          "title": "Hindi: water transport in plants, then a follow-up",
+          "turns": [
+            {"say": "पौधों में पानी जड़ से पत्तियों तक कैसे पहुँचता है?", "core": true,
+             "expect": {"kind": "answer", "refused": false, "language": "hi", "contains_any": ["xylem", "root", "stem", "vessel"]}},
+            {"say": "और भोजन पत्तियों से बाकी हिस्सों तक कैसे जाता है?", "core": true,
+             "expect": {"kind": "answer", "refused": false, "language": "hi", "contains_any": ["phloem", "food"]}}
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -137,10 +137,16 @@ def _is_relevant(passage: Retrieved, request_terms: Set[str], min_score: float) 
 # "How do I cook food" asks how to do a task, and one shared word is not enough to answer
 # it: "food" is in every nutrition chapter. A request like this is answered only when one
 # passage names every word of the task, as a lesson on adding fractions names "add" and
-# "fractions". "How do plants make food?" asks how something works, so it is not held to this.
+# "fractions". A word of five letters or more counts when the passage has its first five
+# letters, so "separation" names "separate". "How do plants make food?" asks how something
+# works, so it is not held to this. On 32 first-person how-to questions a textbook answers
+# and 24 everyday tasks (11 November), this refused 2 of the 32 ("How do we save forests?" and
+# "How can we separate salt from water?", whose passages never say "save" or "separate") and 11
+# of the 24, including two the off-topic benchmark had answered.
 _HOW_TO = re.compile(r"^\W*(?:how\s+(?:do|can|should|could|would|shall|will|must)\s+(?:i|we)\b|how\s+to\b)",
                      re.IGNORECASE)
-_COUNTS = set("one two three four five six seven eight nine ten hundred thousand".split())
+# Words a task can leave out: counts, and verbs that do not name the task.
+_NOT_TASK = set("one two three four five six seven eight nine ten hundred thousand know understand".split())
 
 
 def asks_how_to(request: str) -> bool:
@@ -148,7 +154,9 @@ def asks_how_to(request: str) -> bool:
 
 
 def _covers_task(passage: Retrieved, request_terms: Set[str]) -> bool:
-    return request_terms - _COUNTS <= _content_terms(f"{passage.text} {passage.chapter} {passage.section}")
+    terms = _content_terms(f"{passage.text} {passage.chapter} {passage.section}")
+    stems = {t[:5] for t in terms if len(t) >= 5}
+    return all(w in terms or (len(w) >= 5 and w[:5] in stems) for w in request_terms - _NOT_TASK)
 
 
 EVERYDAY_WORDS |= _content_terms(
