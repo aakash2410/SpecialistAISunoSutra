@@ -4,7 +4,7 @@
 #   ./scripts/make_module.sh [--tar]
 #
 # Produces dist/specialist-module/: the pipeline code, the e5 embedding model, the
-# answer verifier, the safety model, the baked DIKSHA indexes and the Ansible role. Bhashini and the CUDA
+# answer verifier, the safety model, the language ID model, the baked DIKSHA indexes and the Ansible role. Bhashini and the CUDA
 # build of CTranslate2 are too large to ship here, so the role fetches them on the device.
 # Re-run this after any code or corpus change.
 
@@ -16,6 +16,7 @@ PKG="$ROOT/python/pocketinfer"
 E5="$ROOT/local/models/multilingual-e5-small-onnx"
 VERIFIER="$ROOT/local/models/nli-deberta-v3-base-onnx"
 SAFETY="$ROOT/local/models/nli-safety-onnx"
+LANGID="$ROOT/local/models/lang-id-ecapa-onnx"
 VERSION="$(date +%Y.%m.%d)"
 
 echo "==> Building Specialist module $VERSION"
@@ -31,13 +32,17 @@ if [ ! -f "$SAFETY/model.onnx" ]; then
   echo "!! No safety model at $SAFETY. Export one with training/export_nli.py" >&2
   exit 1
 fi
+if [ ! -f "$LANGID/model.onnx" ]; then
+  echo "!! No language ID model at $LANGID. Export it with tools/export_langid.py" >&2
+  exit 1
+fi
 rm -rf "$OUT"
 APP="$OUT/payload/app/python/pocketinfer"
 mkdir -p "$APP/models" "$APP/specialist" "$OUT/payload/corpus" "$OUT/payload/models" "$OUT/payload/tools"
 
 # --- code: only what the pipeline runs ---------------------------------------
 cp "$PKG/__init__.py" "$APP/"
-for model in asr nmt tts ocr embed verify whisper; do
+for model in asr nmt tts ocr embed verify whisper langid; do
   cp "$PKG/models/$model.py" "$APP/models/"
 done
 cp "$PKG/specialist/"*.py "$APP/specialist/"
@@ -45,22 +50,20 @@ mkdir -p "$OUT/payload/app/local"
 cp "$ROOT/local/"*.py "$OUT/payload/app/local/"
 
 # --- models and tools --------------------------------------------------------
-cp -R "$E5" "$VERIFIER" "$SAFETY" "$OUT/payload/models/"
+cp -R "$E5" "$VERIFIER" "$SAFETY" "$LANGID" "$OUT/payload/models/"
 cp "$ROOT/tools/fetch_assets.py" "$ROOT/module/assets.json" "$OUT/payload/tools/"
 
-# --- content: baked indexes only, not raw harvests or backups ----------------
-count=0
-for index in "$ROOT"/corpus/*/index; do
-  [ -f "$index/embeddings.npy" ] || continue
-  name="$(basename "$(dirname "$index")")"
-  mkdir -p "$OUT/payload/corpus/$name"
-  cp -R "$index" "$OUT/payload/corpus/$name/"
-  count=$((count + 1))
-done
-if [ "$count" -eq 0 ]; then
-  echo "!! No baked index found. Run: python3 ingest/build_index.py" >&2
+# --- content: the one baked index the device will use, not raw harvests ------
+# Same choice as the voice loop (local/corpus_index.py), looking in this repo only.
+INDEX="$(cd "$ROOT" && python3 -c 'import sys; from local.corpus_index import find_index; print(find_index(roots=(sys.argv[1],)) or "")' "$ROOT/corpus")"
+if [ -z "$INDEX" ]; then
+  echo "!! No baked index found. Run: python3 ingest/build_index.py --corpus corpus/diksha_g6_8_science" >&2
   exit 1
 fi
+name="$(basename "$(dirname "$INDEX")")"
+echo "==> Shipping index $name"
+mkdir -p "$OUT/payload/corpus/$name"
+cp -R "$INDEX" "$OUT/payload/corpus/$name/"
 
 # --- provisioning ------------------------------------------------------------
 cp -R "$ROOT/module/ansible" "$OUT/ansible"

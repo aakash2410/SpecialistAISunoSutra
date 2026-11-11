@@ -12,6 +12,7 @@ This role installs the full software pipeline on a Jetson running JetPack 6, and
 | Retrieval, `multilingual-e5-small` | `/opt/specialist/models` |
 | Answer verifier, `nli-deberta-v3-base` | `/opt/specialist/models` |
 | Safety model, `nli-safety-onnx` | `/opt/specialist/models` |
+| Spoken language ID, `lang-id-ecapa-onnx` | `/opt/specialist/models` |
 | Reading pages, Tesseract with Hindi and English | System package |
 | DIKSHA index | `/opt/specialist/corpus` |
 | Pipeline code and Python environment | `/opt/specialist/app`, `/opt/specialist/venv` |
@@ -59,7 +60,7 @@ Change these in the inventory or with `-e`. The full list is in `ansible/roles/s
 | `specialist_camera_vendor`, `specialist_camera_product` | Point the camera settings at a different USB camera, using its IDs from `lsusb` |
 | `specialist_assets_dir` | Reuse files you have already downloaded |
 | `specialist_voice_autostart` | Start the voice loop at boot. Set to `false` to run it only by hand |
-| `specialist_voice_in_lang`, `specialist_voice_out_lang` | The languages of the loop started at boot, `hi` by default |
+| `specialist_voice_in_lang`, `specialist_voice_out_lang` | The languages of the loop started at boot. `auto`, the default, works out each question's language and answers in it |
 | `specialist_trigger` | The talk button: `key` for any USB keyboard or keypad (Enter), or `gpio` for a touch sensor |
 | `specialist_gpio_chip`, `specialist_gpio_line` | With `gpio`, the chip and line the sensor's signal is wired to |
 
@@ -77,7 +78,7 @@ With the microphone, press Enter to start recording and Enter again to stop:
 specialist-voice --in-lang hi --out-lang hi
 ```
 
-Choose `--in-lang` and `--out-lang` from `hi` and `en`. English speech goes to Whisper and Hindi speech to Bhashini, because the device does not detect the language yet.
+`--in-lang` and `--out-lang` default to `auto`. For speech, a language ID model and Whisper's confidence decide between Hindi and English, then Hindi goes to Bhashini and English to Whisper. Typed questions and pages go by their script. The answer comes in the question's language, unless the question names one, such as "in English" or "हिंदी में". Set `hi` or `en` to fix either. The routing is explained in `python/pocketinfer/specialist/language.py`.
 
 To type a question, or use a recording or a page photo:
 

@@ -90,7 +90,7 @@ def build(passages, rng, limit):
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Build rule-based hard negatives for the answer check.")
-    ap.add_argument("--chunks", default=os.path.join(ROOT, "corpus/diksha_g7_all/index/chunks.jsonl"))
+    ap.add_argument("--chunks", default=os.path.join(build_nli_data.full_index(), "chunks.jsonl"))
     ap.add_argument("--out", default=os.path.join(ROOT, "training/data_answer_check"))
     ap.add_argument("--limit", type=int, default=6000)
     ap.add_argument("--seed", type=int, default=29)

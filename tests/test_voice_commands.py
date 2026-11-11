@@ -96,7 +96,8 @@ def _harness(out_lang="en"):
     from local.voice_loop import LoopHarness
 
     h = LoopHarness.__new__(LoopHarness)
-    h.out_lang, h.session, h.tts_provider = out_lang, Session(), _FakeTTS()
+    h.out_lang = h.turn_out = out_lang
+    h.session, h.tts_provider = Session(), _FakeTTS()
     return h
 
 

@@ -10,6 +10,14 @@ Memory lives only in the running process and is never written to disk. It clears
 restarts, and after any question the safety check flags, because a shared classroom
 device should not carry one person's words into the next person's turn.
 
+A teacher can also say what the last class covered and ask for a lesson plan. Those
+turns go to lesson_plan.py, and what was covered is kept with the rest of the memory.
+Students can ask for a quiz. Those turns go to quiz.py, and the quiz in progress is kept
+with the rest of the memory, so it ends when the memory clears. A teacher can ask for a
+quick revision of a topic for a class ("revise acids with class 7"). Those turns go to
+revision.py, and the class and topic are kept with the rest of the memory, so "now do the
+same for class 8" works until the memory clears.
+
 It also keeps the audio of the last answer, so "repeat that" or "slower" can replay it
 without asking again, for a teacher taking notes. That audio clears with the rest of the
 memory. The one exception is a safety reply: it is the device's own fixed words, so it can
@@ -81,6 +89,18 @@ class Session:
         self.last_rewrite_seconds = 0.0
         self.last_audio: List[bytes] = []
         self.last_text: List[str] = []
+        # Lesson planning (see lesson_plan.py): what the teacher said the class covered,
+        # and whether the device has just asked which topic the lesson is on.
+        self.covered: Optional[str] = None
+        self.pending_lesson = False
+        # A quiz (see quiz.py): the one in progress, and whether the device has just asked
+        # which topic it should be on.
+        self.quiz = None
+        self.pending_quiz = False
+        # A revision (see revision.py): the last class named, as a number, and the last
+        # topic revised, so "now do the same for class 8" knows what to revise.
+        self.grade: Optional[int] = None
+        self.revision_topic: Optional[str] = None
 
     @staticmethod
     def is_reset(text: str) -> bool:
@@ -98,6 +118,9 @@ class Session:
     def clear(self) -> None:
         self.turns.clear()
         self.last_audio, self.last_text = [], []
+        self.covered, self.pending_lesson = None, False
+        self.quiz, self.pending_quiz = None, False
+        self.grade, self.revision_topic = None, None
 
     def keep_last(self, results) -> None:
         """Keep what was just said, so it can be repeated. Call after the answer is spoken."""
@@ -142,6 +165,21 @@ def ask(engine, session: Session, question: str, target_language: str = "en",
     question is answered as asked. The session's ``last_rewrite`` says what was asked.
     """
     session.expire_if_idle()
+    from . import lesson_plan, quiz, revision
+
+    # A quiz in progress comes first, so a student's answer is never taken for a lesson plan.
+    for mode in (quiz, revision, lesson_plan):
+        if not mode.handles(session, question):
+            continue
+        flagged = False
+        for sentence in mode.respond(engine, session, question, target_language):
+            flagged = flagged or (sentence.refused and sentence.reason.startswith("safety:"))
+            yield sentence
+        if flagged:
+            session.clear()
+        session.last_used = session.clock()
+        return
+
     asked = question
     started = time.time()
     if llm is not None and session.needs_context(question) and not engine.safety.check(question):

@@ -31,6 +31,37 @@ REFUSAL_TEXT = (
 # The LLM is told to emit exactly this token if the passages are insufficient.
 REFUSAL_SENTINEL = "NO_ANSWER_IN_SOURCE"
 
+# Students in rural India connect with examples from their own lives. After a checked
+# explanation, the answer model is asked separately for one example of the facts it kept (see
+# pipeline._example). Asking for it in the answer prompt itself made the model state facts
+# from its own knowledge, and 4 of 60 answers were refused. A direct answer gets no example:
+# on "What is the speed of light?" the model's examples had nothing to do with the question.
+EXAMPLE_INTENTS = ("explain", "simplify")
+EXAMPLE_SYSTEM = (
+    "You give one short example to help students in a village school in India picture a fact. "
+    "Use their everyday life, such as fields and crops, cattle, a hand pump or well, cooking on "
+    "a chulha, the monsoon or the weekly market, never cities or other countries. The example "
+    "must show one of the facts you are given, exactly as stated. Do not add any new fact, "
+    "number or name. Reply with one short sentence, under 20 words, that starts with 'For example,'."
+)
+# Words an example may use freely: things from a village student's everyday life. Any other
+# word the facts and question do not already use counts as new content (see pipeline).
+EVERYDAY_WORDS = set()  # filled below, once _content_terms is defined
+
+
+def example_prompt(request: str, facts: List[str]) -> str:
+    listed = "\n".join(f"- {f}" for f in facts)
+    return f"Question: {request}\n\nFacts:\n{listed}\n\nOne example, in one sentence:"
+
+
+_EXAMPLE_START = re.compile(r"^\W*(for example|for instance|e\.g\.|imagine|think of|just like|like when)\b",
+                            re.IGNORECASE)
+
+
+def is_example(sentence: str) -> bool:
+    return bool(_EXAMPLE_START.match(sentence or ""))
+
+
 # Default retrieval gate. With the real e5 embedder, on-topic queries sit well
 # above this; the hashing fallback is noisier, so the demo lowers it.
 DEFAULT_MIN_SCORE = 0.30
@@ -103,6 +134,35 @@ def _is_relevant(passage: Retrieved, request_terms: Set[str], min_score: float) 
     return bool(request_terms & _content_terms(f"{passage.text} {passage.chapter} {passage.section}"))
 
 
+# "How do I cook food" asks how to do a task, and one shared word is not enough to answer
+# it: "food" is in every nutrition chapter. A request like this is answered only when one
+# passage names every word of the task, as a lesson on adding fractions names "add" and
+# "fractions". "How do plants make food?" asks how something works, so it is not held to this.
+_HOW_TO = re.compile(r"^\W*(?:how\s+(?:do|can|should|could|would|shall|will|must)\s+(?:i|we)\b|how\s+to\b)",
+                     re.IGNORECASE)
+_COUNTS = set("one two three four five six seven eight nine ten hundred thousand".split())
+
+
+def asks_how_to(request: str) -> bool:
+    return bool(_HOW_TO.match(request or ""))
+
+
+def _covers_task(passage: Retrieved, request_terms: Set[str]) -> bool:
+    return request_terms - _COUNTS <= _content_terms(f"{passage.text} {passage.chapter} {passage.section}")
+
+
+EVERYDAY_WORDS |= _content_terms(
+    """village field fields crop crops farm farmer farmers cow cows buffalo goat cattle well hand pump
+    water rain monsoon river pond tree trees leaf leaves sun sunlight sunny day night morning evening
+    school student students child children teacher class home house roof wall floor kitchen cooking
+    cook chulha stove fire pot pan dal rice roti wheat food meal milk tea glass cup spoon plate bucket
+    rope cloth clothes market weekly shop seller buyer money rupee road bicycle mother father family
+    friend people hand hands feet stone soil mud seed seeds grass plant plants animal animals bird
+    birds insect insects flower flowers fruit fruits vegetable vegetables salt sugar lemon juice
+    example instance like just when imagine"""
+)
+
+
 def build_grounding(
     request: str,
     passages: List[Retrieved],
@@ -125,6 +185,13 @@ def build_grounding(
             passages=passages,
             reason=f"No passage covers this request (best similarity {best:.2f}, "
                    f"threshold {min_score:.2f}).",
+        )
+    if asks_how_to(request) and not any(_covers_task(p, request_terms) for p in relevant):
+        return GroundingResult(
+            refused=True,
+            intent=intent,
+            passages=passages,
+            reason="Asks how to do a task, and no passage names all of it.",
         )
 
     numbered = []

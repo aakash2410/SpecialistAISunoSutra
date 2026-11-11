@@ -48,8 +48,12 @@ class WhisperASR:
         self.task = task  # 'transcribe' | 'translate' (non-English speech -> English)
 
     def transcribe(self, clip: AudioClip, language: str = "en") -> str:
+        return self.transcribe_scored(clip, language)[0]
+
+    def transcribe_scored(self, clip: AudioClip, language: str = "en"):
+        """(text, confidence), where confidence near 0 means Whisper is sure."""
         audio = self._w.pcm16_to_float32(clip.pcm)
-        return self._w.transcribe(audio, language=language, task=self.task)
+        return self._w.transcribe_scored(audio, language=language, task=self.task)
 
 
 # ---------------------------------------------------------------------------- MT

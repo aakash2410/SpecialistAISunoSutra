@@ -21,6 +21,8 @@ import os
 import sys
 import time
 
+import numpy as np
+
 # Import the device runtime + providers from the bundled package.
 sys.path.insert(0, os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "python"))
 sys.path.insert(0, os.path.join(os.path.abspath(os.path.dirname(__file__)), ".."))
@@ -32,17 +34,11 @@ from local.providers import make_asr, make_mt, make_tts, make_llm  # noqa: E402
 
 
 def _resolve_index() -> str:
-    """Canonical index: $SPECIALIST_INDEX_DIR > the first baked index found."""
-    env = os.environ.get("SPECIALIST_INDEX_DIR")
-    if env:
-        return env
-    roots = ("/opt/specialist/corpus", os.path.join(os.path.dirname(__file__), "..", "corpus"))
-    for root in roots:
-        for name in ("diksha_g7_all", "diksha_g7_science"):
-            p = os.path.join(root, name, "index")
-            if os.path.exists(os.path.join(p, "embeddings.npy")):
-                return p
-    return os.path.join(roots[1], "diksha_g7_science", "index")
+    """Canonical index: $SPECIALIST_INDEX_DIR > the first baked index found, in the order
+    local/corpus_index.py gives (diksha_g6_8_science, then diksha_g7_all)."""
+    from local.corpus_index import resolve_index
+
+    return resolve_index()
 
 
 DEFAULT_INDEX = _resolve_index()
@@ -57,13 +53,23 @@ class LoopHarness:
         self.args = args
         self.in_lang = args.in_lang.lower()
         self.out_lang = args.out_lang.lower()
+        # The languages of the current request and its answer. With "auto" they are worked
+        # out for every request (see pocketinfer.specialist.language).
+        self.turn_in = "en" if self.in_lang == "auto" else self.in_lang
+        self.turn_out = self.turn_in if self.out_lang == "auto" else self.out_lang
 
         # Providers (each is swappable via the factory names).
         asr = args.asr
-        if asr == "auto":
-            # Bhashini's speech model only covers Hindi, so English goes to tiny Whisper.
-            asr = "whisper" if self.in_lang == "en" else "bhashini"
-        self.asr = None if (args.text or args.from_image) else make_asr(asr, whisper_model=args.whisper_model)
+        self.router = None
+        self.asr = None
+        if not (args.text or args.from_image):
+            if self.in_lang == "auto":
+                self.router = self._make_router(args)
+            else:
+                if asr == "auto":
+                    # Bhashini's speech model only covers Hindi, so English goes to tiny Whisper.
+                    asr = "whisper" if self.in_lang == "en" else "bhashini"
+                self.asr = make_asr(asr, whisper_model=args.whisper_model)
         self.mt = make_mt(args.mt)                       # used for query-side translation too
         self.tts_provider = None if args.no_speak else make_tts(args.tts)
 
@@ -93,14 +99,29 @@ class LoopHarness:
         self.rewrite_llm = self.engine.llm if args.llm == "ollama" else None
         self._texts = list(args.text or [])
         self._warm_up(args)
+        asr_name = "auto (language ID, Whisper, Bhashini)" if self.router else getattr(self.asr, "name", "(none)")
         print(
-            f"[providers] asr={getattr(self.asr,'name','(none)')}  mt={self.mt.name}  "
+            f"[providers] asr={asr_name}  mt={self.mt.name}  "
             f"tts={getattr(self.tts_provider,'name','(off)')}  llm={args.llm}  "
             f"in={self.in_lang} out={self.out_lang}"
         )
-        if self.in_lang != "en" and self.mt.name == "none":
+        if self.in_lang not in ("en", "auto") and self.mt.name == "none":
             print("[warn] input language is not English but MT is 'none' — the query "
                   "won't be translated before retrieval over the English corpus.")
+
+    @staticmethod
+    def _make_router(args):
+        """Language ID first, then Whisper for English, else Bhashini (see language.py)."""
+        from pocketinfer.models.langid import LanguageId
+        from pocketinfer.specialist.language import LanguageRouter
+
+        if args.asr != "auto":
+            raise SystemExit("--in-lang auto picks the speech recognition itself, so leave --asr as auto")
+        whisper = make_asr("whisper", whisper_model=args.whisper_model)
+        bhashini = make_asr("bhashini")
+        router = LanguageRouter(LanguageId().log_probs, whisper.transcribe_scored, bhashini.transcribe)
+        router.parts = (whisper, bhashini)
+        return router
 
     def _warm_up(self, args) -> None:
         """Run every part once before the first question, because first runs are slow.
@@ -119,11 +140,16 @@ class LoopHarness:
         steps.append(("safety model", lambda: self.engine.safety.verifier.support_score("I feel fine.", "I feel fine.")))
         if self.in_lang != "en" or self.out_lang != "en":
             steps.append(("translation", lambda: self.mt.translate("Plants make food.", "en", "hi")))
-        if self.asr is not None:
-            from pocketinfer.specialist.providers import AudioClip
+        from pocketinfer.specialist.providers import AudioClip
 
-            silence = AudioClip(pcm=b"\0\0" * 16000, sample_rate=16000)
+        silence = AudioClip(pcm=b"\0\0" * 16000, sample_rate=16000)
+        if self.asr is not None:
             steps.append(("speech input", lambda: self.asr.transcribe(silence, self.in_lang)))
+        if self.router is not None:
+            whisper, bhashini = self.router.parts
+            steps.append(("language ID", lambda: self.router.langid(np.zeros(16000, np.float32), self.router.languages)))
+            steps.append(("English speech input", lambda: whisper.transcribe(silence, "en")))
+            steps.append(("Hindi speech input", lambda: bhashini.transcribe(silence, "hi")))
         for name, step in steps:
             try:
                 step()
@@ -132,14 +158,27 @@ class LoopHarness:
         print(f"[ready] warmed up in {time.time() - t0:.1f} s")
 
     def _capture_text(self, mic) -> str:
+        from pocketinfer.specialist.language import script_language
+
+        auto = self.in_lang == "auto"
         if self.args.text:
-            return self._texts.pop(0) if self._texts else ""
+            text = self._texts.pop(0) if self._texts else ""
+            if auto:
+                self.turn_in = script_language(text)
+            return text
         t0 = time.time()
         if self.args.from_image:
             from pocketinfer.models.ocr import Ocr
 
             with open(self.args.from_image, "rb") as f:
-                raw = Ocr().infer(f.read(), self.in_lang)["text"]
+                image = f.read()
+            # Hindi pages carry English terms, so read with both packs. An English page is
+            # then read again with English alone, which reads English text best.
+            raw = Ocr().infer(image, "hi" if auto else self.in_lang)["text"]
+            if auto:
+                self.turn_in = script_language(raw)
+                if self.turn_in == "en":
+                    raw = Ocr().infer(image, "en")["text"]
             print(f"[1 OCR ] ({(time.time()-t0)*1000:.0f}ms) -> {raw!r}")
             from pocketinfer.specialist.page_questions import extract_questions_from_ocr, question_from_page
 
@@ -148,18 +187,32 @@ class LoopHarness:
             return question
         clip = mic.record()
         t1 = time.time()
-        raw = self.asr.transcribe(clip, self.in_lang)
+        if self.router is not None:
+            route = self.router.route(clip)
+            self.turn_in, raw = route.language, route.text
+            print(f"[1 LANG] {route.language}: {route.reason} ({_fmt_timings(route.timings)})")
+        else:
+            raw = self.asr.transcribe(clip, self.in_lang)
         print(f"[1 ASR ] ({(time.time()-t1)*1000:.0f}ms, {clip.duration_seconds:.1f}s audio) -> {raw!r}")
         return raw
 
+    def _choose_output(self, *texts: str) -> None:
+        """Answer in the request's language, unless it asks for one by name."""
+        if self.out_lang != "auto":
+            self.turn_out = self.out_lang
+            return
+        from pocketinfer.specialist.language import requested_output
+
+        self.turn_out = requested_output(*texts) or self.turn_in
+
     def _translate_query(self, raw: str, T: dict) -> str:
         """Translate the request into English for the Specialist, if needed."""
-        if self.in_lang == "en":
+        if self.turn_in == "en":
             return raw
         ts = time.time()
-        query_en = self.mt.translate(raw, self.in_lang, "en")
+        query_en = self.mt.translate(raw, self.turn_in, "en")
         T["mt_in"] = time.time() - ts
-        print(f"[2 MT  ] {self.in_lang}->en -> {query_en!r}")
+        print(f"[2 MT  ] {self.turn_in}->en -> {query_en!r}")
         return query_en
 
     NOTHING_TO_REPEAT = {"en": "There is nothing to repeat yet. Please ask a question.",
@@ -169,12 +222,12 @@ class LoopHarness:
         """Say the last answer again, slower and with pauses if asked, without asking again."""
         self.session.expire_if_idle()
         if not self.session.last_text:
-            text = self.NOTHING_TO_REPEAT.get(self.out_lang, self.NOTHING_TO_REPEAT["en"])
+            text = self.NOTHING_TO_REPEAT.get(self.turn_out, self.NOTHING_TO_REPEAT["en"])
             print(f"[{command}] nothing to repeat yet")
             if self.tts_provider is not None:
                 from local.audio import play_wav_bytes
 
-                play_wav_bytes(self.tts_provider.synthesize(text, self.out_lang))
+                play_wav_bytes(self.tts_provider.synthesize(text, self.turn_out))
             return True
         slow = command == "slower"
         print(f"[{command}] saying the last answer again{' slowly' if slow else ''}:")
@@ -206,6 +259,7 @@ class LoopHarness:
             self.session.clear()
             print("[session] new topic, earlier questions forgotten")
             return True
+        self._choose_output(raw)
         # Checked before translation, so a Hindi "दोबारा बोलो" replays at once.
         command = self.session.command(raw)
         if command:
@@ -215,9 +269,12 @@ class LoopHarness:
             self.session.clear()
             print("[session] new topic, earlier questions forgotten")
             return True
+        self._choose_output(raw, query_en)
         command = self.session.command(query_en)
         if command:
             return self._replay(command)
+        if self.in_lang == "auto" or self.out_lang == "auto":
+            print(f"[lang ] question in {self.turn_in}, answer in {self.turn_out}")
 
         header = {"printed": False}
 
@@ -236,14 +293,14 @@ class LoopHarness:
                 header["printed"] = True
             for c in sr.citations:
                 print(f"          · {c}")
-            print(f"   · {sr.spoken_text}")
+            print(f"   · {'(example) ' if sr.example else ''}{sr.spoken_text}")
 
         speaking = self.tts_provider is not None
         play_fn = play_wav_bytes if speaking else (lambda _b: None)
         from pocketinfer.specialist.session import ask
 
         results, first_audio = speak_stream(
-            ask(self.engine, self.session, query_en, self.out_lang, llm=self.rewrite_llm),
+            ask(self.engine, self.session, query_en, self.turn_out, llm=self.rewrite_llm),
             play_fn, on_sentence,
         )
 
@@ -319,8 +376,11 @@ def main():
     ap.add_argument("--llm", default="ollama", help="ollama|extractive")
     ap.add_argument("--no-speak", action="store_true", help="don't play TTS (print only)")
     # languages
-    ap.add_argument("--in-lang", default="en")
-    ap.add_argument("--out-lang", default="en")
+    ap.add_argument("--in-lang", default="auto",
+                    help="hi, en, or auto to work it out for each request: speech by language ID and "
+                         "Whisper, typed text and pages by their script")
+    ap.add_argument("--out-lang", default="auto",
+                    help="hi, en, or auto to answer in the request's language, unless it names one")
     # models / paths
     ap.add_argument("--index", default=DEFAULT_INDEX)
     ap.add_argument("--embed-model", default="intfloat/multilingual-e5-small")

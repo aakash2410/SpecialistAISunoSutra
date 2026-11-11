@@ -102,6 +102,14 @@ def whisper_ready():
 
 
 @pytest.fixture(scope="session")
+def langid_ready():
+    from pocketinfer.models.langid import _resolve_dir
+
+    if not _resolve_dir():
+        pytest.skip("language ID model missing. Export it with tools/export_langid.py")
+
+
+@pytest.fixture(scope="session")
 def tesseract_ready():
     if not shutil.which("tesseract"):
         pytest.skip("Tesseract is not installed")

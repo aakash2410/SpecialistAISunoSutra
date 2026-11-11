@@ -285,7 +285,9 @@ def test_a_refused_question_is_retried_once_on_the_passage_with_its_phrase(make_
     engine.index.search = _light_search
     result = engine.answer("What is the speed of light?")
     assert not result.refused and result.answer_en == SPEED
-    assert len(calls) == 2 and "300,000" not in calls[0]
+    from pocketinfer.specialist.grounding import EXAMPLE_SYSTEM
+    answers = [c for c in calls if c != EXAMPLE_SYSTEM]    # an explanation also asks for an example
+    assert len(answers) == 2 and "300,000" not in answers[0]
     engine.llm = _answers_only_from_the_speed_passage
     streamed = list(engine.stream_answer("What is the speed of light?"))
     assert [s.text_en for s in streamed] == [SPEED]
@@ -382,7 +384,9 @@ def test_wiring_streaming_plays_every_sentence_in_order(make_engine):
 
 # ------------------------------------------------------- the shipped artefact
 def test_full_index_leaves_out_garbled_scans_and_teacher_manuals():
-    index = os.path.join(os.path.dirname(CORPUS_DIR), "diksha_g7_all", "index")
+    from local.corpus_index import full_index
+
+    index = full_index(os.path.dirname(CORPUS_DIR))
     with open(os.path.join(index, "chunks.jsonl"), encoding="utf-8") as f:
         chunks = [json.loads(line) for line in f]
     with open(os.path.join(index, "manifest.json"), encoding="utf-8") as f:

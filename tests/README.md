@@ -22,7 +22,7 @@ A test that needs something this machine lacks skips and names it. A full pass n
 | Where | When | Result |
 |---|---|---|
 | Jetson, full stack, each test in its own process | 6 November 2026 | 113 passed, 1 expected failure, 1 unexpected pass, 2 skipped. Lowest free memory 2,766 MB |
-| Mac | 10 November 2026, with the talk button, the voice service and "repeat" and "slower" | 171 passed, 20 skipped, 2 expected failures |
+| Mac | 11 November 2026, with lesson plans | 218 passed, 20 skipped, 2 expected failures |
 
 The Hindi voice loop timing test first failed because `local/` had not been copied to the Jetson, so it ran old code. After copying it, the test passed. The unexpected pass is "how do I cook food" now being refused; it stays marked as an expected failure until it passes again. The Jetson skips are two harvest tests that need PyMuPDF, which only runs off the device. The Mac skips are tests that need Bhashini or the Jetson.
 
@@ -53,6 +53,14 @@ Compare answer models on 60 curriculum, 30 off-topic and 8 passage-lacks-answer 
 ```bash
 python3 tests/benchmark/answer_models.py qwen2.5:1.5b
 ```
+
+How often the language router picks the right language, on a folder of labelled recordings named `en_*.wav`, `hi_*.wav` and `hinglish_*.wav`. Add `--no-bhashini` on a Mac:
+
+```bash
+python3 tests/benchmark/language_id.py recordings/
+```
+
+On 54 synthetic Mac voices (US, British and Indian English, Hindi, Hinglish) it picked all 54 correctly on 10 November. Real recordings are still needed to set its thresholds.
 
 Score the safety check on the frozen, development, adversarial and holdout sets:
 

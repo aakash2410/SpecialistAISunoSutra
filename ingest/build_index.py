@@ -5,18 +5,19 @@ uses fully offline. Re-run it during Suno Sutra's periodic update window to
 refresh the corpus, exactly like any other model or asset.
 
     python ingest/build_index.py \
-        --corpus corpus/diksha_g7_science \
+        --corpus corpus/diksha_g6_8_science \
         --model intfloat/multilingual-e5-small
 
 Outputs into <corpus>/index/:
     embeddings.npy   float32 (n, dim), L2-normalized
-    chunks.jsonl     text + DIKSHA source metadata, one per line
-    manifest.json    embedder, dim, counts, provenance
+    chunks.jsonl     text + DIKSHA source metadata (grade, subject, board, licence), one per line
+    manifest.json    embedder, dim, counts, licence and grade summaries, provenance
 """
 
 from __future__ import annotations
 
 import argparse
+import collections
 import json
 import logging
 import os
@@ -31,7 +32,7 @@ _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, _ROOT)
 sys.path.insert(0, os.path.join(_ROOT, "python"))
 
-from ingest.chunk import chunk_documents  # noqa: E402
+from ingest.chunk import chunk_documents, dedupe_documents  # noqa: E402
 from ingest.diksha_pull import load_local  # noqa: E402
 from ingest.page_quality import clean_chunks, english_vocabulary  # noqa: E402
 from pocketinfer.specialist.rerank import write_vocabulary  # noqa: E402
@@ -40,12 +41,24 @@ from pocketinfer.models.embed import DEFAULT_MODEL_NAME, RECOMMENDED_MIN_SCORE, 
 logger = logging.getLogger(__name__)
 
 
+def _tally(chunks, key) -> dict:
+    """Chunks per value of ``key``; a chunk tagged with several grades counts for each."""
+    counts: collections.Counter = collections.Counter()
+    for c in chunks:
+        values = c.get(key)
+        values = values if isinstance(values, list) else [values]
+        counts.update(str(v) if v else "(none)" for v in (values or [None]))
+    return dict(counts.most_common())
+
+
 def build(corpus_dir: str, model_name: str, max_words: int, overlap: int):
     raw_path = os.path.join(corpus_dir, "raw", "chapters.json")
     if not os.path.exists(raw_path):
         raise FileNotFoundError(f"No raw corpus at {raw_path}. Run diksha_pull first.")
 
-    documents = load_local(raw_path)
+    documents, repeats = dedupe_documents(load_local(raw_path))
+    if repeats:
+        logger.info("Left out %d repeated pages (items tagged with several grades)", repeats)
     chunks, removed = clean_chunks(chunk_documents(documents, max_words=max_words, overlap=overlap))
     if not chunks:
         raise ValueError("No chunks produced — is raw/chapters.json empty?")
@@ -73,7 +86,12 @@ def build(corpus_dir: str, model_name: str, max_words: int, overlap: int):
         "dim": int(embeddings.shape[1]),
         "num_chunks": len(chunks),
         "num_documents": len(documents),
-        "removed": removed,
+        "removed": {**removed, "repeated pages": repeats} if repeats else removed,
+        "num_items": len({c["content_id"] for c in chunks}),
+        "licenses": _tally(chunks, "license"),
+        "items_by_license": _tally(list({c["content_id"]: c for c in chunks}.values()), "license"),
+        "grades": _tally(chunks, "grade"),
+        "subjects": _tally(chunks, "subject"),
         "chunk_max_words": max_words,
         "chunk_overlap": overlap,
         "recommended_min_score": RECOMMENDED_MIN_SCORE,

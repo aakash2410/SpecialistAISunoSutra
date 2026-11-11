@@ -16,6 +16,17 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _thinking_off(client, model_name: str) -> dict:
+    """``think=False`` for a model with a thinking mode, such as Qwen3.5, which thinks by
+    default. Reasoning first would delay the first spoken sentence and use up num_predict.
+    Models without one are sent nothing, since some Ollama versions reject the option."""
+    try:
+        capabilities = client.show(model_name).capabilities or []
+    except Exception:  # noqa: BLE001
+        return {}
+    return {"think": False} if "thinking" in capabilities else {}
+
+
 def ollama_grounded_client(model_name: str, num_predict: int = 128,
                            timeout: float = 90.0, temperature: float = 0.0,
                            keep_alive=-1):
@@ -27,6 +38,7 @@ def ollama_grounded_client(model_name: str, num_predict: int = 128,
     import ollama
 
     client = ollama.Client(timeout=timeout)
+    extra = _thinking_off(client, model_name)
 
     def _client(system_prompt: str, user_prompt: str) -> str:
         resp = client.chat(
@@ -37,6 +49,7 @@ def ollama_grounded_client(model_name: str, num_predict: int = 128,
             ],
             options={"num_predict": num_predict, "temperature": temperature},
             keep_alive=keep_alive,
+            **extra,
         )
         try:
             return resp.message.content
@@ -57,6 +70,7 @@ def ollama_grounded_stream_client(model_name: str, num_predict: int = 128,
     import ollama
 
     client = ollama.Client(timeout=timeout)
+    extra = _thinking_off(client, model_name)
 
     def _client(system_prompt: str, user_prompt: str):
         stream = client.chat(
@@ -68,6 +82,7 @@ def ollama_grounded_stream_client(model_name: str, num_predict: int = 128,
             options={"num_predict": num_predict, "temperature": temperature},
             keep_alive=keep_alive,
             stream=True,
+            **extra,
         )
 
         for chunk in stream:

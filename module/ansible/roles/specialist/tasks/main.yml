@@ -457,6 +457,31 @@
     dest: "{{ specialist_root }}/corpus/"
     mode: "0644"
 
+# The module ships one index. Remove any other left by an earlier install, so the voice
+# loop cannot pick a stale one and content under licences no longer used leaves the device.
+- name: Find installed indexes
+  tags: [content]
+  ansible.builtin.find:
+    paths: "{{ specialist_root }}/corpus"
+    file_type: directory
+  register: specialist_installed_corpus
+
+- name: Remove indexes this module does not ship
+  tags: [content]
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ specialist_installed_corpus.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  when:
+    - specialist_shipped_indexes | length > 0
+    - (item.path | basename) not in specialist_shipped_indexes
+  vars:
+    specialist_shipped_indexes: >-
+      {{ query('ansible.builtin.fileglob', playbook_dir ~ '/../payload/corpus/*/index/manifest.json')
+         | map('dirname') | map('dirname') | map('basename') | list }}
+
 # ---------------------------------------------------------------------- verify
 # The checks load every model again, so pause the voice loop to keep memory free.
 - name: Pause the voice loop during the checks
@@ -486,7 +511,7 @@
 - name: Ask a question the corpus does not cover
   tags: [verify]
   ansible.builtin.command:
-    argv: [/usr/local/bin/specialist-voice, --no-speak, --text, Who won the cricket world cup?]
+    argv: [/usr/local/bin/specialist-voice, --no-speak, --text, "Who won the cricket world cup?"]
   register: specialist_check_refusal
   changed_when: false
   failed_when: "'REFUSED' not in specialist_check_refusal.stdout"

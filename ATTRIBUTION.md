@@ -21,6 +21,10 @@ These are not stored here. `tools/fetch_assets.py` downloads the first group fro
 
 The Ansible role restores the full 128-token list for Bhashini's Hindi speech model, because the bundled code lists only 88. The list comes from `hi-conformer.nemo` in [AI4Bharat/transactional-voice-ai](https://github.com/AI4Bharat/transactional-voice-ai), which shows no licence.
 
+## Language ID model
+
+`local/models/lang-id-ecapa-onnx` is an ONNX export, made with `tools/export_langid.py`, of [speechbrain/lang-id-voxlingua107-ecapa](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa) by SpeechBrain (Apache-2.0). It was trained on VoxLingua107 (Valk and Alumäe, 2021). The export ships in the install bundle.
+
 ## Safety model
 
 The safety model is `cross-encoder/nli-deberta-v3-small` (Apache-2.0), fine-tuned on these sources:

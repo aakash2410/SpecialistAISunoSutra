@@ -11,6 +11,8 @@ embed -> retrieve -> ground -> LLM -> MT, lives here.
         -> build_grounding (refuse if not covered)
         -> LLM (grounded; may also refuse)
         -> Verifier (keep only sentences an approved passage supports)
+        -> for an explanation, one example from village life, written in a second call
+           and checked under its own rule (see _example)
         -> if that refused, one more try on re-ranked passages (see rerank.rescue)
         -> MT into target language
     => AnswerResult (text + citations + timings [+ audio if a TTS client is given])
@@ -33,14 +35,21 @@ from typing import Callable, Iterator, List, Optional
 from ..models.embed import DEFAULT_MODEL_NAME, Embed
 from ..models.verify import Verifier
 from .grounding import (
+    DEFAULT_MIN_SCORE,
+    EXAMPLE_INTENTS,
+    EXAMPLE_SYSTEM,
+    EVERYDAY_WORDS,
+    _content_terms,
     REFUSAL_TEXT,
     build_grounding,
     classify_intent,
     clean_answer,
+    example_prompt,
+    is_example,
     is_refusal_response,
     iter_sentences,
 )
-from .answer_guard import QUESTION_SIMILARITY, contradicts
+from .answer_guard import QUESTION_SIMILARITY, contradicts, unseen_name, wrong_number
 from .rerank import CANDIDATES, load_vocabulary, rescue
 from .safety import SafetyCheck, load_safety_model
 from .vector_index import Retrieved, VectorIndex
@@ -57,6 +66,18 @@ MTClient = Callable[[str, str, str], str]
 TTSClient = Callable[[str, str], bytes]
 
 _UNSUPPORTED_REASON = "No sentence of the answer was supported by the approved passages."
+# An example may not be contradicted by the passage it illustrates with this probability or more.
+EXAMPLE_CONTRADICTION = 0.5
+# A good example is a case of the fact before it, so it must entail that fact with this
+# probability. On 16 examples Qwen wrote (11 November), this kept 6 of 9 good ones and
+# dropped 6 of 7 that invented facts, such as a chulha with a concave mirror.
+EXAMPLE_ILLUSTRATES = 0.5
+# An example may use at most this many words that are not everyday village words and not
+# already in the facts, question or passages. Examples that invented facts used 7 to 11 (a
+# hand pump "powered by sunlight", a wind-driven "electromagnet"), and 12 of 13 sound ones
+# used 6 or fewer, on 19 examples from the 60-question benchmark (11 November).
+EXAMPLE_NEW_WORDS = 6
+_EXAMPLE_LEAD = re.compile(r"^\W*(for example|for instance|e\.g\.)\W*", re.IGNORECASE)
 _LIVE_REASON = "Asks for live information, which textbooks cannot give."
 
 # Textbooks cannot say what is true today, and a maths problem about the price of gold
@@ -105,6 +126,7 @@ class SentenceResult:
     citations: List[str] = field(default_factory=list)   # sources not yet cited in this answer
     reason: str = ""
     timings: dict = field(default_factory=dict)          # each step, on the first sentence only
+    example: bool = False                                # the model's own example, not a passage's fact
 
     @property
     def spoken_text(self) -> str:
@@ -175,17 +197,72 @@ class SpecialistEngine:
                 return None
         return source
 
-    def _search(self, request: str) -> List[Retrieved]:
+    def _example(self, request: str, intent: str, kept: List[str], sources: List[Retrieved],
+                 passages: List[Retrieved]):
+        """One example from village life for an explanation, as (sentence, passage), or None.
+
+        The answer model writes it in a second, separate call, from the sentences that
+        passed the check. It is the model's own, so no passage supports it word for word,
+        and it has its own check. It is kept only if it adds no number or name, flips no
+        fact, brings in little new content (EXAMPLE_NEW_WORDS), is close to the question, passes the safety check, and is a case of one of
+        the kept sentences (it entails that sentence) without the passage behind that
+        sentence contradicting it. It is cited to that passage.
+
+        This cannot catch every invented detail: "in a village, you might find camels and
+        alpacas providing wool" still entails "fibres come from animals". That is the cost
+        of giving examples at all.
+        """
+        if intent not in EXAMPLE_INTENTS or not kept or self.llm is extractive_llm:
+            return None
+        if any(is_example(k) for k in kept):   # the passages already gave one
+            return None
+        try:
+            reply = self.llm(EXAMPLE_SYSTEM, example_prompt(request, kept))
+        except Exception as e:  # noqa: BLE001
+            logger.warning("example failed (%s)", e)
+            return None
+        sentence = next(iter_sentences([clean_answer(reply or "")]), "")
+        if not is_example(sentence) or is_refusal_response(sentence):
+            return None
+        texts = [p.text for p in passages]
+        joined = " ".join(texts)
+        if wrong_number(sentence, joined) or unseen_name(sentence, joined) or contradicts(sentence, texts):
+            logger.info("Dropped an example that adds or flips a fact: %s", sentence)
+            return None
+        new = _content_terms(sentence) - _content_terms(" ".join([request, *kept, joined])) - EVERYDAY_WORDS
+        if len(new) > EXAMPLE_NEW_WORDS:
+            logger.info("Dropped an example that brings in too much new content %s: %s", sorted(new), sentence)
+            return None
+        body = _EXAMPLE_LEAD.sub("", sentence)
+        question = self.embedder.embed_one(request, kind="query")
+        if float(question @ self.embedder.embed_one(body, kind="passage")) < QUESTION_SIMILARITY:
+            logger.info("Dropped an example far from the question: %s", sentence)
+            return None
+        if self.safety.check(sentence):
+            return None
+        for fact, source in zip(kept, sources):
+            if (self.verifier.support_score(body, fact) >= EXAMPLE_ILLUSTRATES
+                    and self.verifier.contradiction_score(source.text, sentence) < EXAMPLE_CONTRADICTION):
+                return sentence, source
+        logger.info("Dropped an example that shows none of the facts: %s", sentence)
+        return None
+
+    def _search(self, request: str, grade=None) -> List[Retrieved]:
         """The top candidates in search order: the first top_k are the plain result,
-        and the rest are kept for a rescue."""
+        and the rest are kept for a rescue. With ``grade`` (a class, such as 6), only
+        that class's passages, unless none of them would pass the retrieval gate."""
         qvec = self.embedder.embed_one(request, kind="query")
-        return self.index.search(qvec, top_k=max(CANDIDATES, self.top_k))
+        if grade is None:
+            return self.index.search(qvec, top_k=max(CANDIDATES, self.top_k))
+        gate = DEFAULT_MIN_SCORE if self.min_score is None else self.min_score
+        return self.index.search(qvec, top_k=max(CANDIDATES, self.top_k), grade=grade, min_score=gate)
 
     def _ground(self, request: str, passages: List[Retrieved]):
         kwargs = {} if self.min_score is None else {"min_score": self.min_score}
         return build_grounding(request, passages, **kwargs)
 
-    def stream_answer(self, request: str, target_language: str = "en") -> Iterator[SentenceResult]:
+    def stream_answer(self, request: str, target_language: str = "en",
+                      grade=None) -> Iterator[SentenceResult]:
         """Yield the answer one sentence at a time (embed -> retrieve -> ground ->
         stream LLM -> per-sentence MT + TTS).
 
@@ -197,20 +274,10 @@ class SpecialistEngine:
         sentinel, or no sentence surviving) yield a single refused SentenceResult.
         """
         def _localize(text: str) -> str:
-            if self.mt and target_language and target_language.lower() != "en":
-                try:
-                    return self.mt(text, "EN", target_language)
-                except Exception as e:  # noqa: BLE001
-                    logger.warning("stream MT failed (%s)", e)
-            return text
+            return self._localize_text(text, target_language)
 
         def _audio(text: str) -> Optional[bytes]:
-            if self.tts:
-                try:
-                    return self.tts(text, target_language)
-                except Exception as e:  # noqa: BLE001
-                    logger.warning("stream TTS failed (%s)", e)
-            return None
+            return self._synthesize(text, target_language)
 
         steps = {}
         clock = [time.time()]
@@ -255,6 +322,7 @@ class SpecialistEngine:
                 chunks = iter([self.llm(g.system_prompt, g.user_prompt)])
             idx = 0
             cited = set()
+            kept, sources = [], []
             for i, sentence in enumerate(iter_sentences(chunks)):
                 _mark("llm")
                 if i == 0 and is_refusal_response(sentence):
@@ -267,6 +335,8 @@ class SpecialistEngine:
                 if source is None:
                     logger.info("Dropped an unsupported sentence: %s", text)
                     continue
+                kept.append(text)
+                sources.append(source)
                 citation = source.citation()
                 new_citations = [] if citation in cited else [citation]
                 cited.add(citation)
@@ -280,9 +350,19 @@ class SpecialistEngine:
                 )
                 clock[0] = time.time()
                 idx += 1
-            return None if idx else _UNSUPPORTED_REASON
+            if not idx:
+                return _UNSUPPORTED_REASON
+            example = self._example(request, g.intent, kept, sources, g.passages)
+            if example is not None:
+                text, source = example
+                loc = _localize(text)
+                audio = _audio(loc)
+                citation = source.citation()
+                yield SentenceResult(index=idx, text_en=text, text_localized=loc, audio=audio,
+                                     citations=[] if citation in cited else [citation], example=True)
+            return None
 
-        candidates = self._search(request)
+        candidates = self._search(request, grade)
         reason = yield from _attempt(candidates[:self.top_k])
         if reason is not None:
             retry = rescue(request, candidates, self.top_k, self.vocabulary)
@@ -291,6 +371,27 @@ class SpecialistEngine:
                 reason = yield from _attempt(retry)
         if reason is not None:
             yield _refusal(reason)
+
+    def _localize_text(self, text: str, target_language: str) -> str:
+        if self.mt and target_language and target_language.lower() != "en":
+            try:
+                return self.mt(text, "EN", target_language)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("stream MT failed (%s)", e)
+        return text
+
+    def _synthesize(self, text: str, target_language: str) -> Optional[bytes]:
+        if self.tts:
+            try:
+                return self.tts(text, target_language)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("stream TTS failed (%s)", e)
+        return None
+
+    def say(self, text_en: str, target_language: str = "en", index: int = 0) -> SentenceResult:
+        """One of the device's own fixed sentences, translated and spoken like an answer."""
+        loc = self._localize_text(text_en, target_language)
+        return SentenceResult(index, text_en, loc, self._synthesize(loc, target_language))
 
     def _localize_flag(self, flag, target_language: str) -> str:
         """Use the human-written text where there is one; translate only as a fallback."""
@@ -306,7 +407,7 @@ class SpecialistEngine:
                 logger.warning("MT failed on a safety response (%s)", e)
         return flag.response_en
 
-    def answer(self, request: str, target_language: str = "en") -> AnswerResult:
+    def answer(self, request: str, target_language: str = "en", grade=None) -> AnswerResult:
         t = {}
         t0 = time.time()
 
@@ -330,7 +431,7 @@ class SpecialistEngine:
             return result
 
         ts = time.time()
-        candidates = self._search(request)
+        candidates = self._search(request, grade)
         t["retrieve"] = time.time() - ts
         passages = candidates[:self.top_k]
         g, kept, citations, dropped = self._try_passages(request, passages, t)
@@ -392,7 +493,7 @@ class SpecialistEngine:
 
         # Keep only what an approved passage supports, and cite only those passages.
         ts = time.time()
-        kept, citations, dropped = [], [], []
+        kept, citations, dropped, sources = [], [], [], []
         for sentence in iter_sentences([llm_text]):
             # Strip any leaked refusal note the model appended to a valid answer.
             text = clean_answer(sentence)
@@ -403,8 +504,15 @@ class SpecialistEngine:
                 dropped.append(text)
                 continue
             kept.append(text)
+            sources.append(source)
             if source.citation() not in citations:
                 citations.append(source.citation())
+        if kept:
+            example = self._example(request, g.intent, kept, sources, g.passages)
+            if example is not None:
+                kept.append(example[0])
+                if example[1].citation() not in citations:
+                    citations.append(example[1].citation())
         t["verify"] = t.get("verify", 0.0) + time.time() - ts
         if not kept:
             g.reason = _UNSUPPORTED_REASON

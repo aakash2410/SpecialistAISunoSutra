@@ -24,6 +24,8 @@ import sys
 import urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from local.corpus_index import full_index  # noqa: E402
 
 CONTRADICTION, ENTAILMENT, NEUTRAL = 0, 1, 2
 AEGIS = ("https://huggingface.co/datasets/nvidia/Aegis-AI-Content-Safety-Dataset-2.0/"
@@ -210,7 +212,7 @@ def safety_aegis(rng, path: str):
 def main() -> int:
     ap = argparse.ArgumentParser(description="Build NLI fine-tuning data from free local sources.")
     ap.add_argument("--out", default="training/data")
-    ap.add_argument("--chunks", default="corpus/diksha_g7_all/index/chunks.jsonl")
+    ap.add_argument("--chunks", default=os.path.join(full_index(), "chunks.jsonl"))
     ap.add_argument("--rules", type=int, default=6000)
     ap.add_argument("--questions", type=int, default=1200)
     ap.add_argument("--self-harm", type=int, default=1000)

@@ -62,8 +62,26 @@ class Whisper:
         multilingual models only) — the latter turns Hindi speech into an English
         query in one step, no separate MT.
         """
+        return self.transcribe_scored(audio, language, task)[0]
+
+    def transcribe_scored(self, audio, language: Optional[str] = "en", task: str = "transcribe"):
+        """Speech to text, plus Whisper's confidence: the mean log-probability per token.
+
+        Near 0 means sure. On Hindi speech the English model is unsure (about -1.0 in
+        tests with synthetic voices, against -0.1 to -0.4 for English), which is how the
+        language router tells Indian English from Hindi.
+        """
         if isinstance(audio, (bytes, bytearray)):
             audio = self.pcm16_to_float32(bytes(audio))
         lang = None if self.model_size.endswith(".en") else language
-        segments, _info = self._model.transcribe(audio, language=lang, task=task, beam_size=5)
-        return "".join(seg.text for seg in segments).strip()
+        # No timestamps: nothing uses them, and their tokens drag the confidence of clear English
+        # down to where Hindi sits (-0.71 worst English with them, -0.44 without).
+        segments, _info = self._model.transcribe(audio, language=lang, task=task, beam_size=5,
+                                                 without_timestamps=True)
+        segments = list(segments)
+        text = "".join(seg.text for seg in segments).strip()
+        if not segments:
+            return text, float("-inf")
+        tokens = [max(1, len(seg.tokens)) for seg in segments]
+        confidence = sum(seg.avg_logprob * n for seg, n in zip(segments, tokens)) / sum(tokens)
+        return text, float(confidence)

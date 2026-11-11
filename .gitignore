@@ -25,3 +25,6 @@ training/*.log
 
 # Device-specific
 module/ansible/inventory.ini
+
+# Stakeholder interview notes, kept private
+notes/

@@ -95,6 +95,12 @@ class Verifier:
         probs = np.exp(logits - logits.max())
         return float((probs / probs.sum())[self._entailment])
 
+    def contradiction_score(self, premise: str, sentence: str) -> float:
+        """Probability that ``premise`` contradicts ``sentence``."""
+        logits = self._logits(premise, sentence)
+        probs = np.exp(logits - logits.max())
+        return float((probs / probs.sum())[self._contradiction])
+
     def supporting_passage(self, sentence: str, passages: Sequence[Retrieved]) -> Optional[Retrieved]:
         """Return the first passage that supports ``sentence``, or None."""
         for passage in passages:

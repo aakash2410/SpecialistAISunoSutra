@@ -41,6 +41,18 @@ NLI_MARGIN = -1.07
 # Below this it gets the general reply, which also gives the Childline number.
 MEDICAL_LEAD = 0.75
 
+# Something a person does to themselves that can kill or hurt them. On its own it is often a
+# lesson ("What happens when you hold your breath?"), so it only counts beside a word for
+# doing it on purpose. Fasting for a festival or a protest, animals and sport are left out.
+_HARM_ACT = (r"(?:\b(?:stop\w*|quit\w*|refus\w*)\s+(?:eating|drinking|food|water|to\s+eat|to\s+drink|taking\s+(?:\w+\s+){0,2}medicines?)"
+             r"|\b(?:not|n't|never)\s+(?:eat|drink)\w*\s+(?:anything|at\s+all|for\s+(?:days|weeks|months|a\s+long\s+time))"
+             r"|\bstop\w*\s+(?:their|his|her|my|your)\s+(?:own\s+)?(?:heart|breathing)"
+             r"|\b(?:cut|hurt|harm|burn|starv|drown)\w*\s+(?:myself|yourself|himself|herself|themselves|oneself)"
+             r"|\b(?:swallow|overdos)\w*"
+             r"|\b(?:drink|drank|drinks|drinking)\s+(?:poison|pesticide|phenyl|bleach|kerosene))\b")
+_NOT_FASTING = (r"^(?!.*\b(?:fast|fasting|vrat|roza|ramzan|ramadan|navratri|protest|strike|satyagraha|gandhi"
+                r"|animals?|birds?|bears?|insects?|fish|snakes?|frogs?|plants?|hibernat\w*|athletes?|players?|wrestlers?)\b).*?")
+
 _PATTERNS = {
     "self_harm": r"\b(kill|hurt|harm|cut|hang|poison)(ing)? (myself|himself|herself|themselves)\b"
                  r"|\bsuicid|\b(want|wants|wish|wishes|going|plan\w*) to (die|end (my|his|her|their) life)\b"
@@ -59,7 +71,35 @@ _PATTERNS = {
                  r"|\btired\s+of\s+(?:being\s+alive|living|my\s+life)\b|\bcan(?:'t|not)\s+go\s+on\b"
                  r"|\b(?:happier|easier|better)(?:\s+off)?\s+(?:without\s+me|if\s+i\s+(?:was|were|am)\s+(?:not\s+here|gone|dead))\b"
                  r"|\bbetter\s+when\s+(?:i|she|he)\s+(?:am|is)\s+gone\b"
-                 r"|\b(?:fall|dose|amount)\b.{0,30}\b(?:fatal|lethal)\b",
+                 r"|\b(?:fall|dose|amount)\b.{0,30}\b(?:fatal|lethal)\b"
+                 # Indirect statements asked about "a person" or "someone", which the general
+                 # question rule would otherwise let through. Each needs a sign of choosing to
+                 # die or get hurt, because "What happens if we don't eat for a day?" and
+                 # "What happens when a person stops breathing?" are lessons.
+                 r"|\b(?:kill|hang|starve|poison)(?:s|es|ed|ing)?\s+(?:myself|yourself|himself|herself|themselves|oneself)\b"
+                 r"|" + _NOT_FASTING + r"\b(?:on\s+purpose|deliberately|intentionally)\b.{0,50}" + _HARM_ACT
+                 + r"|" + _NOT_FASTING + _HARM_ACT + r".{0,50}\b(?:on\s+purpose|deliberately|intentionally)\b"
+                 r"|\b(?:stop\w*|not|n't|never)\s+(?:eating|drinking|eat|drink)\b.{0,40}"
+                 r"\b(?:until|till|before)\s+(?:the\s+end|death|(?:they|he|she|i|you|a\s+person)\s+(?:die|dies|never\s+wakes?))\b"
+                 r"|\bhold\w*\s+(?:their|his|her|my|your)\s+breath\b.{0,20}\b(?:until|till)\s+(?:they|he|she|i|you)\s+(?:die|dies)\b"
+                 r"|\bdie\s+if\s+(?:they|he|she|i|you|we|a\s+person|someone)\s+stop\w*\s+(?:eating|drinking|taking)\b"
+                 r"|\b(?:stop\w*|not)\s+(?:eating|eat)\b.{0,40}\b(?:disappear|fade\s+away|become\s+nothing)\b"
+                 r"|\bwant\s+to\s+(?:fade\s+away|become\s+nothing|not\s+exist)\b"
+                 r"|\bi\b.{0,20}\b(?:stop\w*|quit\w*)\s+(?:eating|drinking)(?:\s+and\s+(?:eating|drinking))?"
+                 r"\s+(?:from\s+(?:today|now|tomorrow)|completely|altogether|forever|for\s+good|any\s*more)\b"
+                 r"|\bnever\s+wake\s+up\b(?!\s+(?:early|on\s+time|in\s+time|before|at|for))"
+                 r"|\b(?:painless|quick|quickest|easiest|fastest|simplest|surest)\s+(?:way|method)s?\b.{0,40}"
+                 r"\b(?:to\s+die|dying|death|stop\s+living|end\s+(?:it|things))\b"
+                 r"|\bpainless(?:ly)?\b.{0,20}\b(?:die|death|dying)\b|\bstop\s+living\s*(?:[?.!,]|$)"
+                 r"|\b(?:die|death|dying)\s+by\s+(?:hanging|suicide|overdose|poisoning|jumping)\b"
+                 r"|\b(?:drink|drinks|drank|drinking|swallow\w*|take|takes|took|eat|eats|ate)\s+(?:some\s+|the\s+|all\s+the\s+"
+                 r"|a\s+(?:bottle|lot)\s+of\s+)?(?:pesticides?|insecticides?|phenyl|rat\s+poison|bleach|kerosene|toilet\s+cleaner)\b"
+                 r"|\bswallow\w*\b.{0,25}\b(?:all|many|lots)\b.{0,15}\b(?:pills|tablets|medicines?)\b"
+                 r"|\b(?:walk\w*|jump\w*|step\w*)\s+in\s+front\s+of\s+(?:a|the)\s+(?:moving\s+)?(?:train|bus|truck|lorry|car)\b"
+                 r"|\b(?:lie|lies|lay|lays|lying)\s+(?:down\s+)?on\s+(?:a|the)\s+(?:railway\s+)?(?:track|tracks|line)\b"
+                 r"|\b(?:a\s+person|someone|somebody|people|i|he|she|they|you|(?:a|the)\s+(?:boy|girl|man|woman|child|student))"
+                 r"\s+(?:\w+\s+)?jump\w*\s+(?:in|into|down)\s+(?:a|the)\s+well\b(?!\s+to\s+(?:save|rescue|help|get|fetch))"
+                 r"|\bcut\w*\s+(?:(?:my|your|his|her|their)\s+)?(?:own\s+)?wrists?\b|\bslit\w*\b.{0,20}\bwrists?\b",
     "abuse": r"\b(touch|touches|touched|touching)\b.*\b(me|her|him|my body|private|bad way)\b|\bbad touch\b"
              r"|\b(beat|beats|beating|hit|hits|hurt|hurts|slap|slaps|kick|kicks|burn|burns) (me|him|her)\b"
              r"|\bprivate (photos|pictures|parts)\b|\bforced? to marry\b|\block(s|ed)? (me|him|her)\b"
@@ -107,6 +147,14 @@ _REQUEST = re.compile(
     r"^(?:please\s+)?(?:(?:can|could|will|would)\s+you\s+)?(?:please\s+)?"
     r"(?:tell\s+me|explain|describe|teach\s+me)"
     r"(?:\s+(?:something|more|a\s+little|a\s+bit))?(?:\s+(?:about|on|regarding))?\s+",
+    re.IGNORECASE,
+)
+# A teacher asking for class material. The NLI reads "a lesson plan for weak students" as a
+# person in danger, so these stop here too, under the same rule: nothing personal in the rest.
+_TEACHING = re.compile(
+    r"^(?:please\s+)?(?:(?:can|could|will|would)\s+you\s+)?(?:please\s+)?"
+    r"(?:make|create|prepare|write|draft|plan|give\s+me|suggest)\s+(?:me\s+)?(?:a\s+|an\s+|some\s+|the\s+)?"
+    r"(?:\w+\s+){0,2}(?:lesson\s+plans?|lessons?|quiz(?:zes)?|worksheets?|tests?|activit(?:y|ies)|questions)\b",
     re.IGNORECASE,
 )
 _HOW_TO = re.compile(r"how\s+to\b|(?:how|what|where)\s+(?:can|could|should|do|would)\s+(?:i|we|you|one|someone)\b",
@@ -223,6 +271,9 @@ class SafetyCheck:
             # so "Explain how to..." still goes to the model.
             if rest and not _PERSONAL.search(rest) and not _HOW_TO.match(rest):
                 return None
+        teaching = _TEACHING.match(request.strip())
+        if teaching and not _PERSONAL.search(request.strip()[teaching.end():]):
+            return None
         category = self._nli_category(request)
         return self._flag(category, "nli") if category else None
 

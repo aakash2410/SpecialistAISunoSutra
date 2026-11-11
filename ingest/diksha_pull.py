@@ -8,23 +8,36 @@ Three modes:
   * local  (default) — load an already-harvested ``raw/chapters.json``.
   * online           — query the public DIKSHA content API for a
     board/grade/subject slice, download the PDF artifacts, and extract text.
+    Add ``--dry-run`` to list what would be downloaded (counts and sizes from the
+    metadata) without fetching any PDF.
   * repair           — re-check an existing ``raw/chapters.json``: OCR the pages that
     fail the readability check from their source PDFs, and drop what still fails.
 
 How the online harvest works (verified against the live API):
   1. Composite search  POST {base}/api/content/v1/search  with filters
-     (gradeLevel/subject/medium/board/mimeType) -> a page of content items, each
-     with an ``artifactUrl`` (the PDF) and a ``license``.
+     (gradeLevel/subject/medium/board/license/mimeType, each a list) -> every
+     matching content item, each with an ``artifactUrl`` (the PDF), a ``license``
+     and a ``size``. The whole list is fetched before any download starts.
   2. Download each PDF and extract its text layer with PyMuPDF (per page).
-     ~80% of DIKSHA PDFs are SCANNED images with no text layer, and many others have
-     a text layer that is junk. Pass ``--ocr`` (requires Tesseract) to OCR both.
+     Many DIKSHA PDFs are scanned images with no text layer, and many others have
+     a text layer that is junk. Pass ``--ocr`` (requires Tesseract) to OCR both;
+     a book's bad pages are OCR'd in parallel (``--workers``).
   3. Emit one document per readable page, in the chapters.json schema
-     (content_id, chapter, section, page, text, source, license). Unreadable pages
-     are left out and counted by reason.
+     (content_id, chapter, section, page, text, source, license, board, grade,
+     subject, medium). ``grade`` and ``subject`` are lists, because DIKSHA tags
+     some items with several. Unreadable pages are left out and counted by reason.
 
-Licensing: only harvest content you are cleared to redistribute offline. The
-Class-7 Science PDFs are CC BY 4.0, but confirm per asset and keep attribution
-(this is a v1 open item).
+A harvest with no ``--subject`` would pull every subject (about 20 GB of PDFs a
+class), so it needs ``--all-subjects`` as well.
+
+Licensing: only harvest content you are cleared to redistribute offline. Pass
+``--license "CC BY 4.0"`` to filter at the source; each item's licence is checked
+again before it is downloaded. Keep attribution.
+
+    python3 ingest/diksha_pull.py --mode online --dry-run \\
+        --grade "Class 6" "Class 7" "Class 8" \\
+        --subject Science Physics Biology "Physical Science" Chemistry \\
+        --license "CC BY 4.0"
 """
 
 from __future__ import annotations
@@ -49,11 +62,14 @@ from ingest.page_quality import page_problem, remove_unwanted  # noqa: E402
 logger = logging.getLogger(__name__)
 
 _OCR_DPI = 200
+# Pages rendered at a time for OCR, per worker, so a long scanned book stays within memory.
+_OCR_BATCH_PER_WORKER = 4
+DEFAULT_WORKERS = 6
 DIKSHA_BASE = "https://diksha.gov.in"
 SEARCH_URL = f"{DIKSHA_BASE}/api/content/v1/search"
 HEADERS = {"Content-Type": "application/json", "User-Agent": "specialist-harvester/1.0"}
 _FIELDS = ["identifier", "name", "artifactUrl", "board", "gradeLevel",
-           "subject", "medium", "license", "contentType", "mimeType"]
+           "subject", "medium", "license", "contentType", "mimeType", "size"]
 
 
 # --------------------------------------------------------------------- local
@@ -80,6 +96,96 @@ def search_content(filters: dict, limit: int, offset: int) -> Tuple[int, List[di
     r.raise_for_status()
     result = r.json().get("result", {})
     return int(result.get("count", 0)), (result.get("content") or [])
+
+
+def _as_list(v) -> List[str]:
+    """A filter or metadata value as a list of non-empty strings."""
+    if v is None:
+        return []
+    values = v if isinstance(v, (list, tuple, set)) else [v]
+    return [str(x).strip() for x in values if x is not None and str(x).strip()]
+
+
+def build_filters(grades, subjects=None, boards=None, medium="English",
+                  licenses=None) -> Dict[str, list]:
+    """The search filters. Every value is a list; an empty one is left out (= any)."""
+    filters: Dict[str, list] = {"gradeLevel": _as_list(grades), "mimeType": ["application/pdf"]}
+    for key, value in (("medium", medium), ("subject", subjects),
+                       ("board", boards), ("license", licenses)):
+        if _as_list(value):
+            filters[key] = _as_list(value)
+    return filters
+
+
+def list_items(filters: dict, limit: int = 100000, page_size: int = 100,
+               search: Optional[Callable[[dict, int, int], Tuple[int, List[dict]]]] = None
+               ) -> Tuple[int, List[dict]]:
+    """Every matching item, deduplicated by identifier, up to ``limit``.
+
+    Fetching the whole list first keeps the order fixed during a long harvest, and lets a
+    dry run show what would be downloaded.
+    """
+    search = search or search_content
+    items: List[dict] = []
+    seen: set = set()
+    offset, count = 0, 0
+    while len(items) < limit:
+        count, page = search(filters, min(page_size, limit - len(items)), offset)
+        if not page:
+            break
+        for c in page:
+            cid = c.get("identifier")
+            if cid and cid not in seen and len(items) < limit:
+                seen.add(cid)
+                items.append(c)
+        offset += len(page)
+        if offset >= count:
+            break
+    if count > limit:
+        logger.warning("Search matched %d items but --limit stops at %d", count, limit)
+    return count, items
+
+
+def licence_allowed(item: dict, licenses: Optional[List[str]]) -> bool:
+    """The per-item check, in case the search filter lets something through."""
+    return not licenses or (item.get("license") or "").strip() in set(_as_list(licenses))
+
+
+def summarize(items: List[dict], licenses: Optional[List[str]] = None) -> dict:
+    """What a harvest of these items would download: counts and sizes, without fetching."""
+    keep = [c for c in items
+            if (c.get("artifactUrl") or "").lower().endswith(".pdf") and licence_allowed(c, licenses)]
+
+    def tally(key) -> Dict[str, list]:
+        out: Dict[str, list] = collections.defaultdict(lambda: [0, 0])
+        for c in keep:
+            for value in _as_list(c.get(key)) or ["(none)"]:
+                out[value][0] += 1
+                out[value][1] += int(c.get("size") or 0)
+        return {k: v for k, v in sorted(out.items(), key=lambda kv: -kv[1][0])}
+
+    return {
+        "items": len(keep),
+        "skipped": len(items) - len(keep),
+        "bytes": sum(int(c.get("size") or 0) for c in keep),
+        "missing_size": sum(1 for c in keep if not c.get("size")),
+        "by_grade": tally("gradeLevel"),
+        "by_subject": tally("subject"),
+        "by_license": tally("license"),
+        "by_board": tally("board"),
+    }
+
+
+def print_summary(count: int, summary: dict) -> None:
+    gb = summary["bytes"] / 1e9
+    print(f"Search matched {count} items; {summary['items']} PDFs to download, "
+          f"{gb:.2f} GB ({summary['skipped']} left out: not a PDF or licence not allowed; "
+          f"{summary['missing_size']} with no size listed)")
+    for title, key in (("grade (an item can carry several)", "by_grade"),
+                       ("subject", "by_subject"), ("licence", "by_license"), ("board", "by_board")):
+        print(f"\nBy {title}:")
+        for name, (n, size) in summary[key].items():
+            print(f"  {name:40s} {n:6d}  {size / 1e6:9.0f} MB")
 
 
 def _open_pdf(pdf_bytes: bytes):
@@ -115,19 +221,27 @@ def _ocr_png(png: bytes) -> str:
     return result.stdout.decode("utf-8", errors="replace").strip()
 
 
-def _extract_pages(pdf_bytes: bytes, ocr: bool) -> List[Tuple[int, str]]:
-    """Return [(page_number, text)] for a PDF, OCR-ing pages with an unusable text layer."""
-    out: List[Tuple[int, str]] = []
+def _extract_pages(pdf_bytes: bytes, ocr: bool, pool: Optional[ThreadPoolExecutor] = None,
+                   workers: int = 1) -> List[Tuple[int, str]]:
+    """Return [(page_number, text)] for a PDF, OCR-ing pages with an unusable text layer.
+
+    Pages are rendered one at a time (MuPDF is not thread-safe) and OCR'd on ``pool``,
+    a few batches at a time, so a long scanned book neither runs serially nor fills memory.
+    """
     with _open_pdf(pdf_bytes) as doc:
-        for i, page in enumerate(doc, start=1):
-            text = page.get_text("text").strip()
-            if ocr and page_problem(text):
-                png = _render_png(page)
-                recovered = _ocr_png(png) if png else ""
-                if not page_problem(recovered):
-                    text = recovered
-            out.append((i, text))
-    return out
+        texts = [page.get_text("text").strip() for page in doc]
+        if ocr:
+            failing = [i for i, text in enumerate(texts) if page_problem(text)]
+            batch = max(1, workers) * _OCR_BATCH_PER_WORKER
+            for start in range(0, len(failing), batch):
+                part = failing[start:start + batch]
+                images = [_render_png(doc[i]) for i in part]
+                run = lambda png: _ocr_png(png) if png else ""  # noqa: E731
+                recovered = list(pool.map(run, images)) if pool else [run(png) for png in images]
+                for i, text in zip(part, recovered):
+                    if not page_problem(text):
+                        texts[i] = text
+    return list(enumerate(texts, start=1))
 
 
 def _download(url: str) -> bytes:
@@ -213,31 +327,32 @@ def _first(v, default=None):
     return v if v not in (None, "") else default
 
 
-def harvest_online(board: Optional[str], grade: str, subject: Optional[str], medium: str = "English",
+def harvest_online(board, grade, subject, medium: str = "English",
                    limit: int = 200, max_docs: int = 100000, min_chars: int = 120,
                    ocr: bool = False, page_size: int = 100,
-                   progress_path: Optional[str] = None) -> List[dict]:
+                   progress_path: Optional[str] = None, licenses=None,
+                   workers: int = DEFAULT_WORKERS,
+                   items: Optional[List[dict]] = None,
+                   fetch: Callable[[str], bytes] = _download) -> List[dict]:
     """Search DIKSHA, download PDFs, and extract text into chapters.json docs.
 
     With ``progress_path``, every finished book is appended there straight away, so a
     stopped harvest loses at most one book and resumes where it left off.
 
-    ``subject``/``board`` are optional — omit them (empty/None) to pull ALL
-    subjects / boards for the grade+medium. ``limit`` caps how many content items
-    to scan; ``max_docs`` caps output pages; ``--ocr`` recovers scanned PDFs.
-    Each document is labelled with its OWN board/subject/grade/medium from DIKSHA.
+    ``grade``, ``subject``, ``board`` and ``licenses`` each take one value or a list;
+    ``subject``/``board``/``licenses`` empty means any. ``limit`` caps how many content
+    items to scan; ``max_docs`` caps output pages; ``ocr`` recovers scanned pages, on
+    ``workers`` threads. ``items`` skips the search (the caller already listed them).
+    Each document is labelled with its OWN metadata from DIKSHA: every grade and
+    subject it is tagged with (lists), its board, medium and licence.
     """
-    filters: Dict[str, list] = {
-        "gradeLevel": [grade], "medium": [medium], "mimeType": ["application/pdf"],
-    }
-    if subject:
-        filters["subject"] = [subject]
-    if board:
-        filters["board"] = [board]
+    filters = build_filters(grade, subject, board, medium, licenses)
+    if items is None:
+        count, items = list_items(filters, limit=limit, page_size=page_size)
+        logger.info("search: %d matched, %d listed", count, len(items))
 
     docs: List[dict] = []
     seen: set = set()
-    offset = 0
     scanned_skipped = 0
     scanned = 0
     dropped: collections.Counter = collections.Counter()
@@ -253,14 +368,12 @@ def harvest_online(board: Optional[str], grade: str, subject: Optional[str], med
                 docs.extend(book["pages"])
         logger.info("Resuming: %d books and %d pages already done", len(finished), len(docs))
     progress = open(progress_path, "a", encoding="utf-8") if progress_path else None
+    pool = ThreadPoolExecutor(max_workers=max(1, workers)) if ocr else None
 
-    while len(seen) < limit and len(docs) < max_docs:
-        want = min(page_size, limit - len(seen))
-        count, items = search_content(filters, want, offset)
-        if not items:
-            break
-        logger.info("search: %d total, page of %d at offset %d", count, len(items), offset)
-        for c in items:
+    try:
+        for n, c in enumerate(items, start=1):
+            if len(docs) >= max_docs:
+                break
             cid = c.get("identifier")
             url = c.get("artifactUrl") or ""
             if not cid or cid in seen:
@@ -268,12 +381,17 @@ def harvest_online(board: Optional[str], grade: str, subject: Optional[str], med
             seen.add(cid)
             if cid in finished or not url.lower().endswith(".pdf"):
                 continue
+            if not licence_allowed(c, licenses):
+                dropped["licence not allowed"] += 1
+                continue
             try:
-                pages = _extract_pages(_download(url), ocr=ocr)
+                pages = _extract_pages(fetch(url), ocr=ocr, pool=pool, workers=workers)
             except Exception as e:  # noqa: BLE001
                 logger.warning("skip %s (%s): %s", cid, (c.get("name") or "")[:30], e)
                 continue
 
+            grades = _as_list(c.get("gradeLevel")) or _as_list(grade)
+            subjects = _as_list(c.get("subject")) or _as_list(subject)
             kept = 0
             first_kept = len(docs)
             for pnum, text in pages:
@@ -292,9 +410,9 @@ def harvest_online(board: Optional[str], grade: str, subject: Optional[str], med
                     "source": url,
                     "license": c.get("license"),
                     # Label with the content's OWN metadata (falls back to the query).
-                    "board": _first(c.get("board"), board),
-                    "grade": _first(c.get("gradeLevel"), grade),
-                    "subject": _first(c.get("subject"), subject),
+                    "board": _first(c.get("board"), _first(_as_list(board))),
+                    "grade": grades,
+                    "subject": subjects,
                     "medium": _first(c.get("medium"), medium),
                 })
                 kept += 1
@@ -304,21 +422,18 @@ def harvest_online(board: Optional[str], grade: str, subject: Optional[str], med
                 scanned_skipped += 1
             else:
                 scanned += 1
-            logger.info("  %s -> %d text pages  (%s)", cid, kept, (c.get("name") or "")[:40])
+            logger.info("  [%d/%d] %s -> %d text pages  (%s)", n, len(items), cid, kept,
+                        (c.get("name") or "")[:40])
             if progress:
                 progress.write(json.dumps({"content_id": cid, "pages": docs[first_kept:]},
                                           ensure_ascii=False) + "\n")
                 progress.flush()
-            if len(docs) >= max_docs:
-                break
             time.sleep(0.2)  # be polite
-
-        offset += len(items)
-        if offset >= count:
-            break
-
-    if progress:
-        progress.close()
+    finally:
+        if pool:
+            pool.shutdown()
+        if progress:
+            progress.close()
     logger.info("Harvested %d text pages from %d content items (%d yielded text, %d had no text layer%s)",
                 len(docs), len(seen), scanned, scanned_skipped,
                 " — pass --ocr to recover scans" if scanned_skipped and not ocr else "")
@@ -342,14 +457,19 @@ def _write(payload: dict, out: Optional[str]) -> None:
     logger.info("Wrote %d documents to %s", len(payload["documents"]), out)
 
 
-def main():
+def _parse_args(argv=None):
     ap = argparse.ArgumentParser(description="Harvest a DIKSHA grade+subject slice (build time).")
     ap.add_argument("--mode", choices=["local", "online", "repair"], default="local")
     ap.add_argument("--raw", default=None, help="path to raw/chapters.json (local and repair modes)")
     ap.add_argument("--out", default=None, help="where to write harvested documents JSON")
-    ap.add_argument("--board", default="", help="board filter ('' = all boards)")
-    ap.add_argument("--grade", default="Class 7")
-    ap.add_argument("--subject", default="", help="subject filter ('' = all subjects)")
+    ap.add_argument("--board", nargs="*", default=[], help="board filter, one or more (none = all boards)")
+    ap.add_argument("--grade", nargs="+", default=["Class 7"], help="one or more, e.g. \"Class 6\" \"Class 7\"")
+    ap.add_argument("--subject", nargs="*", default=[],
+                    help="one or more subjects, e.g. Science Physics. Leaving it out needs --all-subjects")
+    ap.add_argument("--all-subjects", action="store_true",
+                    help="harvest every subject (about 20 GB of PDFs a class)")
+    ap.add_argument("--license", nargs="+", default=None,
+                    help="only these licences, e.g. \"CC BY 4.0\" (default: any)")
     ap.add_argument("--medium", default="English")
     ap.add_argument("--limit", type=int, default=6000, help="max content items to scan")
     ap.add_argument("--max-docs", type=int, default=100000, help="max text pages to output")
@@ -358,13 +478,31 @@ def main():
                     help="save each finished book here, so a stopped harvest can resume")
     ap.add_argument("--ocr", action="store_true",
                     help="OCR scanned pages and pages with a junk text layer (needs Tesseract)")
-    args = ap.parse_args()
+    ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS,
+                    help="pages OCR'd at once (Tesseract processes)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="online mode: list what would be downloaded, with sizes, and fetch nothing")
+    args = ap.parse_args(argv)
+    args.grade = _as_list(args.grade)
+    args.subject = _as_list(args.subject)
+    args.board = _as_list(args.board)
+    args.license = _as_list(args.license) or None
+    if args.mode == "online" and not args.dry_run and not args.subject and not args.all_subjects:
+        ap.error("no --subject given. That would download every subject (about 20 GB of PDFs "
+                 "a class); name the subjects, or pass --all-subjects if you mean it. "
+                 "Try --dry-run first to see the size.")
+    return args
+
+
+def main(argv=None):
+    args = _parse_args(argv)
 
     if args.mode == "repair":
         with open(args.raw, encoding="utf-8") as f:
             payload = json.load(f)
         progress_path = f"{args.out}.progress" if args.out else None
-        docs, report = repair_documents(payload["documents"], progress_path=progress_path)
+        docs, report = repair_documents(payload["documents"], progress_path=progress_path,
+                                        workers=args.workers)
         logger.info("Repair result: %s", report)
         payload["documents"] = docs
         payload["collection"]["quality"] = report
@@ -378,16 +516,27 @@ def main():
             os.path.dirname(__file__), "..", "corpus", "diksha_g7_science", "raw", "chapters.json")
         docs = load_local(os.path.abspath(raw))
     else:
-        docs = harvest_online(args.board or None, args.grade, args.subject, medium=args.medium,
+        filters = build_filters(args.grade, args.subject, args.board, args.medium, args.license)
+        count, items = list_items(filters, limit=args.limit)
+        if args.dry_run:
+            print("Filters:", json.dumps(filters, ensure_ascii=False))
+            print_summary(count, summarize(items, args.license))
+            return
+        logger.info("search: %d matched, %d listed", count, len(items))
+        docs = harvest_online(args.board, args.grade, args.subject, medium=args.medium,
                               limit=args.limit, max_docs=args.max_docs, progress_path=args.progress,
-                              min_chars=args.min_chars, ocr=args.ocr)
+                              min_chars=args.min_chars, ocr=args.ocr, licenses=args.license,
+                              workers=args.workers, items=items)
 
+    grades = ", ".join(args.grade)
+    subjects = ", ".join(args.subject) or "all subjects"
+    boards = ", ".join(args.board) or "all boards"
     payload = {
         "collection": {
-            "name": f"DIKSHA {args.grade} {args.subject or 'all subjects'} "
-                    f"{args.board or 'all boards'} ({args.medium})",
+            "name": f"DIKSHA {grades} {subjects} {boards} ({args.medium})",
             "board": args.board or "all", "gradeLevel": args.grade,
             "subject": args.subject or "all", "medium": args.medium,
+            "license": args.license or "any",
             "source": DIKSHA_BASE + "/", "harvested_at": time.strftime("%Y-%m-%d"),
         },
         "documents": docs,
