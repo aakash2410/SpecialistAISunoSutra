@@ -226,16 +226,51 @@ class LoopHarness:
     NOTHING_TO_REPEAT = {"en": "There is nothing to repeat yet. Please ask a question.",
                          "hi": "अभी दोहराने के लिए कुछ नहीं है। कृपया एक सवाल पूछिए।"}
 
+    def _say(self, replies: dict) -> None:
+        """Speak and show one fixed reply, in the answer's language."""
+        text = replies.get(self.turn_out, replies["en"])
+        print(f"   · {text}")
+        if self.screen:
+            self.screen.show_answer([text], self.turn_out)
+        if self.tts_provider is not None:
+            from local.audio import play_wav_bytes
+
+            play_wav_bytes(self.tts_provider.synthesize(text, self.turn_out))
+
+    def _handle_command(self, text: str):
+        """Act on a spoken command. Returns True when handled, the question said after
+        "new topic" when there is one, or None for an ordinary question."""
+        from pocketinfer.specialist.session import CLOSE_REPLY, RESET_REPLY, parse_command
+
+        kind, rest = parse_command(text)
+        if kind == "reset":
+            self.session.clear()
+            print("[session] new topic, earlier questions forgotten")
+            if rest:
+                return rest
+            self._say(RESET_REPLY)
+            return True
+        if kind == "close":
+            self.session.clear()
+            print("[session] finished, earlier questions forgotten")
+            self._say(CLOSE_REPLY)
+            return True
+        if kind in ("repeat", "slower"):
+            return self._replay(kind)
+        if kind == "ack" and not self.session.mid_activity:
+            # Only "okay" or "yes": nothing to answer. During a quiz it is an answer.
+            print("[skip] no question in that")
+            if self.screen:
+                self.screen.ready()
+            return True
+        return None
+
     def _replay(self, command: str) -> bool:
         """Say the last answer again, slower and with pauses if asked, without asking again."""
         self.session.expire_if_idle()
         if not self.session.last_text:
-            text = self.NOTHING_TO_REPEAT.get(self.turn_out, self.NOTHING_TO_REPEAT["en"])
             print(f"[{command}] nothing to repeat yet")
-            if self.tts_provider is not None:
-                from local.audio import play_wav_bytes
-
-                play_wav_bytes(self.tts_provider.synthesize(text, self.turn_out))
+            self._say(self.NOTHING_TO_REPEAT)
             return True
         slow = command == "slower"
         print(f"[{command}] saying the last answer again{' slowly' if slow else ''}:")
@@ -272,24 +307,20 @@ class LoopHarness:
             return False
         if screen:
             screen.heard(raw, self.turn_in)
-        if self.session.is_reset(raw):
-            self.session.clear()
-            print("[session] new topic, earlier questions forgotten")
-            return True
         self._choose_output(raw)
-        # Checked before translation, so a Hindi "दोबारा बोलो" replays at once.
-        command = self.session.command(raw)
-        if command:
-            return self._replay(command)
-        query_en = self._translate_query(raw, T)
-        if self.session.is_reset(query_en):
-            self.session.clear()
-            print("[session] new topic, earlier questions forgotten")
+        # Checked before translation, so a Hindi "दोबारा बोलो" or "बस" acts at once.
+        handled = self._handle_command(raw)
+        if handled is True:
             return True
+        if handled:  # "New topic. What is friction?": the session is cleared, now the question
+            raw = handled
+        query_en = self._translate_query(raw, T)
         self._choose_output(raw, query_en)
-        command = self.session.command(query_en)
-        if command:
-            return self._replay(command)
+        handled = self._handle_command(query_en)
+        if handled is True:
+            return True
+        if handled:
+            query_en = handled
         if self.in_lang == "auto" or self.out_lang == "auto":
             print(f"[lang ] question in {self.turn_in}, answer in {self.turn_out}")
 

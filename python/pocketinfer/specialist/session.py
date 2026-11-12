@@ -38,9 +38,88 @@ MAX_TURNS = 3
 _MAX_REWRITE_WORDS = 40
 
 _RESET = re.compile(
-    r"^\W*(new topic|new question|start again|start over|नया सवाल|नया विषय|नया टॉपिक)\W*$",
+    r"^\W*(new topic|new question|another topic|another question|different topic|next topic|"
+    r"(i have |ask )?(a |an )?(new|another|different) question|"
+    r"change (the )?(topic|subject)|switch (the )?(topic|subject)|"
+    r"(talk about |ask about |ask )?something else|move on|start again|start over|reset|forget (that|it|this)|"
+    r"नया सवाल|नया प्रश्न|नया विषय|नया टॉपिक|दूसरा विषय|दूसरा सवाल|अगला विषय|अगला सवाल|"
+    r"(विषय|टॉपिक) बदल(ो|िए|ें|ते हैं)|कुछ और|आगे बढ़(ो|िए|ते हैं))\W*$",
     re.IGNORECASE,
 )
+# Finishing: the conversation is cleared and the device says a short goodbye.
+_CLOSE = re.compile(
+    r"^\W*(that'?s (all|it|enough)|that is (all|it|enough)|(we'?re|i'?m|we are|i am) done|done|finished|"
+    r"nothing (else|more)|no more( questions)?|stop|end|exit|quit|bye( bye)?|good ?bye|see you|"
+    r"thank you( (so|very) much)?|thanks( a lot)?|"
+    r"बस( इतना ही| करो| कीजिए)?|इतना ही|धन्यवाद|बहुत धन्यवाद|शुक्रिया|अलविदा|बंद करो|"
+    r"(ख़त्म|खत्म) करो|हो गया)\W*$",
+    re.IGNORECASE,
+)
+# Words said around a command, as in "Okay, new topic now" or "अच्छा, दोबारा बोलो".
+_LEADING = re.compile(
+    r"^\W*(ok(ay)?|alright|all right|right|so|well|hmm+|um+|uh+|yes|yeah|now|please|"
+    r"let'?s|let us|can we|could we|can you|could you|i want to|i would like to|i'd like to|"
+    r"अच्छा|ठीक है|ठीक|चलो|अब|जी|हाँ|हां|कृपया)(\s+|$)",
+    re.IGNORECASE,
+)
+# Spaces, not \b, mark word edges: \b splits Hindi words at their vowel signs.
+_TRAILING = re.compile(r"(^|\s+)(now|please|then|for now|for today|अब|जी|कृपया)\W*$", re.IGNORECASE)
+
+# What the device says back. Answered in the request's language.
+RESET_REPLY = {"en": "Okay, new topic. What would you like to ask?",
+               "hi": "ठीक है, नया विषय। आप क्या पूछना चाहेंगे?"}
+CLOSE_REPLY = {"en": "Okay. Ask me whenever you have another question.",
+               "hi": "ठीक है। जब अगला सवाल हो, पूछ लीजिए।"}
+
+
+def _strip_filler(clause: str) -> str:
+    """The clause without the filler words around it ("okay ... now")."""
+    previous = None
+    while clause != previous:
+        previous = clause
+        clause = _TRAILING.sub("", _LEADING.sub("", clause)).strip()
+    return clause
+
+
+def _clauses(text: str) -> List[str]:
+    return [c.strip() for c in re.split(r"[.,!?।;]+", text or "") if c.strip()]
+
+
+def parse_command(text: str):
+    """What the whole utterance asks for, with any question said after a topic change.
+
+    Returns (kind, rest). kind is "reset", "close", "repeat", "slower", "ack" (only filler,
+    such as "okay"), or None for an ordinary question. rest is the question said after
+    "new topic", as in "New topic. What is friction?", else "".
+    """
+    kinds = []
+    clauses = _clauses(text)
+    for i, clause in enumerate(clauses):
+        core = _strip_filler(clause)
+        if not core:
+            kinds.append("ack")
+        elif _RESET.match(core):
+            kinds.append("reset")
+        elif _CLOSE.match(core):
+            kinds.append("close")
+        elif _SLOWER.match(core):
+            kinds.append("slower")
+        elif _REPEAT.match(core):
+            kinds.append("repeat")
+        elif "reset" in kinds:  # a topic change, then the new question
+            return "reset", " ".join(clauses[i:])
+        else:
+            return None, ""
+    found = set(kinds) - {"ack"}
+    if not found:
+        return ("ack", "") if kinds else (None, "")
+    if "reset" in found and found <= {"reset", "close"}:
+        return "reset", ""
+    if found == {"close"}:
+        return "close", ""
+    if len(found) == 1:
+        return found.pop(), ""
+    return None, ""
 # Whole-utterance commands only, so "Why is the sky blue again?" is still a question.
 _PLEASE = r"(please\s+|कृपया\s+)?"
 _REPEAT = re.compile(
@@ -104,16 +183,19 @@ class Session:
 
     @staticmethod
     def is_reset(text: str) -> bool:
-        return bool(_RESET.match(text or ""))
+        return parse_command(text)[0] == "reset"
 
     @staticmethod
     def command(text: str) -> Optional[str]:
         """Return "slower" or "repeat" when the whole utterance asks for one, otherwise None."""
-        if _SLOWER.match(text or ""):
-            return "slower"
-        if _REPEAT.match(text or ""):
-            return "repeat"
-        return None
+        kind = parse_command(text)[0]
+        return kind if kind in ("slower", "repeat") else None
+
+    @property
+    def mid_activity(self) -> bool:
+        """A quiz or a lesson plan is waiting for the teacher's reply, so "yes" or "okay"
+        is an answer to it, not small talk."""
+        return bool(self.quiz or self.pending_quiz or self.pending_lesson)
 
     def clear(self) -> None:
         self.turns.clear()

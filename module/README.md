@@ -225,7 +225,7 @@ specialist-voice --in-lang en --out-lang en --from-image page.jpg
 
 `--no-speak` prints the answer without playing it. Each answer prints how long every step took, under `[steps]`.
 
-Saying "repeat that" or "दोबारा बोलो" plays the last answer again. Saying "slower" or "धीरे बोलो" plays it at 80% speed, with a pause after each sentence for writing it down. Neither asks the question again.
+Saying "repeat that" or "दोबारा बोलो" plays the last answer again. Saying "slower" or "धीरे बोलो" plays it at 80% speed, with a pause after each sentence for writing it down. Neither asks the question again. Saying "new topic", "change the topic" or "विषय बदलो" clears the conversation and asks for the next question; "New topic. What is friction?" clears it and answers. Saying "that's all", "thank you", "stop", "बस" or "धन्यवाद" clears it and says a short goodbye. Words like "okay", "now", "please", "अच्छा" and "अब" around a command are ignored, and "okay" on its own is skipped, except during a quiz.
 
 ## The talk button
 
