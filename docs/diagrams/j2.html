@@ -1,0 +1,22 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="style.css">
+<style>
+  .route { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 4px 0 20px; font-size: 13px; }
+  .route span.step { border: 1.5px solid var(--box-line); background: var(--box); border-radius: 12px; padding: 3px 10px; }
+  .route span.step.safety { border-color: var(--red); color: var(--red); background: var(--red-bg); }
+  .route span.step.mode { font-weight: bold; }
+  .route span.to { color: var(--muted); }
+  .said { border-color: var(--j2); }
+  .said small { color: var(--j2); }
+  .turn { grid-template-columns: 290px 54px minmax(0,1fr) 54px 360px; }
+</style></head>
+<body><div class="page">
+<div class="head2"><h1 class="j2" style="margin:0">Journey 2: Multi-grade revision</h1><span class="status fail">Mac, English: FAIL, 0 of 3</span><span class="status pending">Hindi: waits for the Jetson</span></div>
+<p class="sub">A teacher in a room with two or three classes. Revises what one class just learnt, then the same topic with another class.</p>
+<div class="route"><b style="margin-right:6px">Route:</b><span class="step">Tap to talk</span><span class="to">›</span><span class="step">Speech to text</span><span class="to">›</span><span class="step">Spoken commands</span><span class="to">›</span><span class="step">To English</span><span class="to">›</span><span class="step safety">Safety check</span><span class="to">›</span><span class="step">Memory</span><span class="to">›</span><span class="step">Textbook core</span><span class="to">›</span><span class="step">Example</span><span class="to">›</span><span class="step">Textbook questions</span><span class="to">›</span><span class="step">Speak and show</span></div>
+<div class="turn"><div class="said"><small>Teacher</small>I just taught class 7 science, photosynthesis. Please revise it with the students.</div><div class="mini"></div><div class="steps"><ol><li>Revision mode reads the class and the topic</li><li>Textbook core searches Class 7 books first, then shared books, then all</li><li>One checked example</li><li>Recall questions from Class 7 pages</li></ol></div><div class="mini"></div><div class="reply"><small>The Specialist</small>Here is a quick revision of photosynthesis for class 7. Photosynthesis is a process where plants make their own food using sunlight, water, and carbon dioxide … For example, imagine a field of wheat plants in the morning … What are the two products formed during the process of photosynthesis?</div></div>
+<div class="turn"><div class="said"><small>Teacher</small>Now do the same for class 8.</div><div class="mini"></div><div class="steps"><ol><li>Same topic from memory, Class 8 books first</li><li>No clean Class 8 question, so students explain it in their own words</li></ol></div><div class="mini"></div><div class="reply"><small>The Specialist</small>Here is a quick revision of photosynthesis for class 8. Plants use sunlight, water, and carbon dioxide to make their own food … Now ask two or three students to explain photosynthesis in their own words.</div></div>
+<div class="turn"><div class="said"><small>Teacher</small>I have just taught class 6 science, light and shadows. Revise it with them.</div><div class="mini"></div><div class="steps"><ol><li>Textbook core: no sentence of the answer survived the check</li></ol></div><div class="mini"></div><div class="reply refused"><small>The Specialist</small>I can't answer that from the approved DIKSHA textbook content on this device.</div></div>
+<div class="cols2" style="margin-top:8px"><div class="note"><b>Why it fails</b><br>The Class 8 revision shares 68% of its words with the Class 7 one (the test allows 60%). The acids revision came with no example. "Light and shadows" for Class 6 is refused.</div><div class="note"><b>Left, 1 dev day</b><br>Make sure every revision has an example, keep two-word topics whole, make the second class's revision differ, then run it in Hindi on the Jetson.</div></div>
+<p class="sub" style="font-size:13px;margin:14px 0 0">Replies trimmed from the Mac journey run, 12 November 2026, Class 6 to 8 index, Qwen2.5-1.5B. See tests/journeys/report_mac_en.md.</p>
+</div></body></html>

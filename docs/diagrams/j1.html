@@ -1,0 +1,23 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="style.css">
+<style>
+  .route { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 4px 0 20px; font-size: 13px; }
+  .route span.step { border: 1.5px solid var(--box-line); background: var(--box); border-radius: 12px; padding: 3px 10px; }
+  .route span.step.safety { border-color: var(--red); color: var(--red); background: var(--red-bg); }
+  .route span.step.mode { font-weight: bold; }
+  .route span.to { color: var(--muted); }
+  .said { border-color: var(--j1); }
+  .said small { color: var(--j1); }
+  .turn { grid-template-columns: 290px 54px minmax(0,1fr) 54px 360px; }
+</style></head>
+<body><div class="page">
+<div class="head2"><h1 class="j1" style="margin:0">Journey 1: Teacher prep</h1><span class="status pass">Mac, English: PASS, 3 of 3</span><span class="status pending">Hindi: waits for the Jetson</span></div>
+<p class="sub">A teacher, before class. Says what the class covered, asks for tomorrow's lesson plan, clears up a doubt, and takes notes.</p>
+<div class="route"><b style="margin-right:6px">Route:</b><span class="step">Tap to talk</span><span class="to">›</span><span class="step">Speech to text</span><span class="to">›</span><span class="step">Spoken commands</span><span class="to">›</span><span class="step">To English</span><span class="to">›</span><span class="step safety">Safety check</span><span class="to">›</span><span class="step">Memory</span><span class="to">›</span><span class="step">Textbook core</span><span class="to">›</span><span class="step">Textbook questions</span><span class="to">›</span><span class="step">Example</span><span class="to">›</span><span class="step">Speak and show</span></div>
+<div class="turn"><div class="said"><small>Teacher</small>Yesterday we covered nutrition in plants.</div><div class="mini"></div><div class="steps"><ol><li>Lesson plan mode notes what was covered, in memory only</li></ol></div><div class="mini"></div><div class="reply"><small>The Specialist</small>Noted. Ask me for a lesson plan for the next class when you are ready.</div></div>
+<div class="turn"><div class="said"><small>Teacher</small>Give me a lesson plan on photosynthesis for tomorrow's class.</div><div class="mini"></div><div class="steps"><ol><li>Recap built from the teacher's own words</li><li>Key ideas: the textbook core on "Explain photosynthesis"</li><li>A simpler version for students who need more help</li><li>A check question and a stretch question, quoted from the textbook</li><li>One checked example from village life</li></ol></div><div class="mini"></div><div class="reply"><small>The Specialist</small>Here is a lesson plan on photosynthesis, for a class at different levels. Start with a short recap of nutrition in plants … Photosynthesis is a process where plants use sunlight to turn water and carbon dioxide into food … For example, during the day, crops like rice in a village field use sunlight …</div></div>
+<div class="turn"><div class="said"><small>Teacher</small>Why do leaves need it to make food?</div><div class="mini"></div><div class="steps"><ol><li>Follow-up rewritten from the last 3 turns: "it" is chlorophyll</li><li>Textbook core, then checked</li></ol></div><div class="mini"></div><div class="reply"><small>The Specialist</small>Leaves need chlorophyll to capture sunlight, which is essential for photosynthesis.</div></div>
+<div class="turn"><div class="said"><small>Teacher</small>Slower please.</div><div class="mini"></div><div class="steps"><ol><li>Spoken command: replays the saved audio at 80% speed, with a pause after each sentence</li></ol></div><div class="mini"></div><div class="reply"><small>The Specialist</small>(the last answer again, slowly, for taking notes)</div></div>
+<div class="cols2" style="margin-top:8px"><div class="note"><b>Also works</b><br>"Lesson plan for weak students" or "for students who are ahead" gives one level. No topic named: "Which topic is the lesson on?". A plan takes about 13 to 30 s on the Mac, first sentence in about 3 s.</div><div class="note"><b>Left, 1 dev day</b><br>Run it in Hindi on the Jetson and fix the wording. No activities: almost none in the scanned textbooks can be quoted cleanly.</div></div>
+<p class="sub" style="font-size:13px;margin:14px 0 0">Replies trimmed from the Mac journey run, 12 November 2026, Class 6 to 8 index, Qwen2.5-1.5B. See tests/journeys/report_mac_en.md.</p>
+</div></body></html>

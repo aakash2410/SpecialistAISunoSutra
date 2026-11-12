@@ -1,0 +1,97 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="style.css">
+<style>
+  .in4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; }
+  .two { display: grid; grid-template-columns: minmax(0,1fr) 62px minmax(0,1fr) 62px minmax(0,1fr); }
+  .lanes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .core { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 26px; }
+  .core .box { position: relative; }
+  .core .box:not(:last-child)::after { content: ""; position: absolute; right: -25px; top: 44%; width: 24px; height: 12px;
+     background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='12'><line x1='0' y1='6' x2='15' y2='6' stroke='%2317232b' stroke-width='2'/><polygon points='14,1 24,6 14,11' fill='%2317232b'/></svg>") no-repeat; }
+  .uses { margin-top: 6px; }
+  .side { display: grid; grid-template-columns: 1fr 260px; gap: 16px; }
+  .out { display: grid; grid-template-columns: minmax(0,1fr) 62px minmax(0,1fr) minmax(0,1fr); gap: 0; }
+  .out .box + .box { margin-left: 12px; }
+  .legend { font-size: 13px; }
+  .stop { color: var(--red); font-weight: bold; font-size: 13px; }
+</style></head>
+<body><div class="page">
+<h1>The Specialist: one device, four classroom journeys</h1>
+<p class="sub">As of 12 November 2026. Everything runs on the Jetson Orin Nano with the network off. Each journey takes its own route through the
+modes in the middle, and all four share the same textbook core: search, gate, answer, check. The answer model only ever sees approved DIKSHA passages.</p>
+
+<div class="side">
+<div>
+<div class="in4">
+  <div class="box"><h3>Tap to talk</h3><p>Tap the 2.8 inch touch screen to start and again to stop. Enter on a USB keyboard also works. Recording stops itself after 30 s</p></div>
+  <div class="box"><h3>Speak <span class="badge cpu">CPU</span></h3><p>Arducam USB mic. Language ID and Whisper's confidence pick Hindi (Bhashini) or English (Whisper tiny.en)</p></div>
+  <div class="box"><h3>Show a page <span class="badge cpu">CPU</span></h3><p>Arducam camera photo, read by Tesseract in Hindi and English. The question on the page is used</p></div>
+  <div class="box"><h3>Type</h3><p>For testing and the journey runner: the same path after speech recognition</p></div>
+</div>
+<div class="down left"><i></i>text, Hindi or English</div>
+
+<div class="two">
+  <div class="box"><h3>Spoken commands</h3><p>Checked first, in either language, through filler words such as "okay" or "अब": <b>repeat that</b>, <b>slower</b>, <b>new topic</b>, <b>that's all</b>. They act on memory and never reach the answer model</p></div>
+  <div class="arrow"><span>question</span></div>
+  <div class="box"><h3>To English <span class="badge gpu">GPU</span></h3><p>Glossary fixes school terms such as भिन्न, then Bhashini translates. Skipped for English</p></div>
+  <div class="arrow"><span>English</span></div>
+  <div class="box red"><h3>Safety check <span class="badge cpu">CPU</span></h3><p style="color:var(--ink)">Patterns, a general question rule, then the fine-tuned safety model. A flag gets a fixed, hand-written reply with helplines, and memory is wiped</p></div>
+</div>
+<div class="down right"><i></i>safe request: which mode is it?</div>
+
+<div class="lanes">
+  <div class="lane j1"><h3>J1 Teacher prep: lesson plan</h3><p>"Yesterday we covered nutrition in plants", then "Lesson plan on photosynthesis". Recap, key ideas, a simpler version, a check question and a stretch question, for a mixed class or one level</p></div>
+  <div class="lane j2"><h3>J2 Multi-grade revision</h3><p>"Revise acids with class 7", then "now do the same for class 8". That class's own books first, an explanation with an example, then its textbook questions</p></div>
+  <div class="lane j3"><h3>J3 Student group quiz</h3><p>"Quiz us on photosynthesis". A textbook question, a spoken answer, then "That's right" or "Not quite" with the checked answer. Next question until "stop"</p></div>
+  <div class="lane j4"><h3>J4 Doubts in Hindi or English</h3><p>"प्रकाश संश्लेषण क्या है?", then "and why sunlight?". A follow-up is rewritten from the last 3 turns, then answered like any question</p></div>
+</div>
+<div class="down"><i></i>every explanation and quiz check goes through the same textbook core</div>
+
+<div class="frame">
+<p class="frame-label">Textbook core: 42,426 passages of Class 6 to 8 science, 1,499 DIKSHA books, all CC BY 4.0</p>
+<div class="core">
+  <div class="box"><h3>Retrieve <span class="badge cpu">CPU</span></h3><p>e5 search. The named class's books first. Questions about today refused</p>
+    <div class="uses"><span class="chip j1">J1</span><span class="chip j2">J2</span><span class="chip j3">J3</span><span class="chip j4">J4</span></div></div>
+  <div class="box"><h3>Gate</h3><p>Score 0.80 and a shared key term. A word no textbook uses gets "Did you mean …?"</p>
+    <div class="uses"><span class="chip j1">J1</span><span class="chip j2">J2</span><span class="chip j3">J3</span><span class="chip j4">J4</span></div></div>
+  <div class="box"><h3>Answer <span class="badge gpu">GPU</span></h3><p>Qwen2.5-1.5B rephrases the passages, one sentence at a time</p>
+    <div class="uses"><span class="chip j1">J1</span><span class="chip j2">J2</span><span class="chip j3">J3</span><span class="chip j4">J4</span></div></div>
+  <div class="box"><h3>Check <span class="badge cpu">CPU</span></h3><p>NLI drops unsupported sentences, flipped facts and lesson aims</p>
+    <div class="uses"><span class="chip j1">J1</span><span class="chip j2">J2</span><span class="chip j3">J3</span><span class="chip j4">J4</span></div></div>
+  <div class="box"><h3>Example <span class="badge gpu">GPU</span></h3><p>One example from village life or the teacher's own list, with its own check</p>
+    <div class="uses"><span class="chip j1">J1</span><span class="chip j2">J2</span><span class="chip j4">J4</span></div></div>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
+  <div class="box"><h3>Textbook questions</h3><p>Questions quoted from pages near the topic, only if they read cleanly without the page. The answer model never writes one</p>
+    <div class="uses"><span class="chip j1">J1</span><span class="chip j2">J2</span><span class="chip j3">J3</span></div></div>
+  <div class="box"><h3>Judge a quiz answer <span class="badge cpu">CPU</span></h3><p>Against the passages first, then against the device's own checked answer, which is also the feedback</p>
+    <div class="uses"><span class="chip j3">J3</span></div></div>
+</div>
+<p class="stop" style="margin:10px 0 0">If no passage passes the gate, or no sentence survives the check, the device says the textbooks on it don't cover the question. Nothing the model wrote is spoken.</p>
+</div>
+<div class="down left"><i></i>kept sentences, with citations</div>
+
+<div class="out">
+  <div class="box"><h3>To Hindi <span class="badge gpu">GPU</span></h3><p>Bhashini, one sentence at a time. Skipped for English answers</p></div>
+  <div class="arrow"></div>
+  <div class="box"><h3>Speak <span class="badge cpu">CPU</span></h3><p>Flite through Bhashini to the USB speaker, while the next sentence is prepared</p></div>
+  <div class="box"><h3>Show</h3><p>The screen's bar shows tap to ask, listening, thinking, answer or not in the textbooks, then the question and the answer as spoken</p></div>
+</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px">
+  <div class="note"><b>Memory, in RAM only</b><br>The last 3 turns, what the class covered, the quiz in progress and the class being revised. Cleared after 3 minutes of silence, on "new topic" or "that's all", after any safety flag, and at reboot. Nothing about students is stored.</div>
+  <div class="note"><b>Language</b><br>Nobody sets it. The answer comes back in the language of the question, unless the question names one ("in English", "हिंदी में").</div>
+  <div class="note"><b>At boot</b><br>Camera and USB set up, mic, speaker and screen found, Ollama, Bhashini and Qwen loaded, then the screen shows "Tap to ask".</div>
+  <div class="note"><b>Status, 12 November</b><br>All four journeys work on the Mac in English. Hindi runs and real recordings wait for the Jetson. Students use it with a teacher present until a safeguarding review.</div>
+  <div class="note"><b>Hardware</b><br>Jetson Orin Nano 8GB Super, 25 W. Arducam 8MP USB camera and mic, USB speaker, Waveshare 2.8 inch touch screen on spi1.</div>
+</div>
+</div>
+
+<div class="legend">
+  <span><span class="chip j1">J1</span> teacher prep</span><span><span class="chip j2">J2</span> multi-grade revision</span>
+  <span><span class="chip j3">J3</span> student group quiz</span><span><span class="chip j4">J4</span> doubts in Hindi or English</span>
+  <span><span class="badge gpu">GPU</span> runs on the GPU</span><span><span class="badge cpu">CPU</span> runs on the CPU</span>
+  <span><span class="swatch" style="border-color:var(--red);background:var(--red-bg)"></span> safety step</span>
+</div>
+</div></body></html>

@@ -98,11 +98,12 @@ class LoopHarness:
 
         self.session = Session()
         self.screen = None
-        if args.screen:
+        # getattr: harnesses such as the journey runner build their own args without these.
+        if getattr(args, "screen", False):
             from local.screen import open_screen
 
             self.screen = open_screen("hi" if self.in_lang == "hi" else "en",
-                                      touch="screen" in args.trigger)
+                                      touch="screen" in getattr(args, "trigger", ""))
         # Only a real answer model can rewrite follow-ups; the extractive one would echo a passage.
         self.rewrite_llm = self.engine.llm if args.llm == "ollama" else None
         self._texts = list(args.text or [])

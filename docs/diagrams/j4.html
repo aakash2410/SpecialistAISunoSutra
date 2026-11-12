@@ -1,0 +1,22 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="style.css">
+<style>
+  .route { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 4px 0 20px; font-size: 13px; }
+  .route span.step { border: 1.5px solid var(--box-line); background: var(--box); border-radius: 12px; padding: 3px 10px; }
+  .route span.step.safety { border-color: var(--red); color: var(--red); background: var(--red-bg); }
+  .route span.step.mode { font-weight: bold; }
+  .route span.to { color: var(--muted); }
+  .said { border-color: var(--j4); }
+  .said small { color: var(--j4); }
+  .turn { grid-template-columns: 290px 54px minmax(0,1fr) 54px 360px; }
+</style></head>
+<body><div class="page">
+<div class="head2"><h1 class="j4" style="margin:0">Journey 4: Doubts in Hindi or English</h1><span class="status partial">Mac, English: PARTIAL</span><span class="status pending">Hindi: waits for the Jetson</span></div>
+<p class="sub">A student asks in their home language, hears the answer in the same language, and asks a follow-up.</p>
+<div class="route"><b style="margin-right:6px">Route:</b><span class="step">Tap to talk</span><span class="to">›</span><span class="step">Speech to text</span><span class="to">›</span><span class="step">Spoken commands</span><span class="to">›</span><span class="step">To English</span><span class="to">›</span><span class="step safety">Safety check</span><span class="to">›</span><span class="step">Follow-up rewrite</span><span class="to">›</span><span class="step">Textbook core</span><span class="to">›</span><span class="step">Example</span><span class="to">›</span><span class="step">Speak and show</span></div>
+<div class="turn"><div class="said"><small>Student</small>प्रकाश संश्लेषण क्या है? मुझे समझाइए।</div><div class="mini"></div><div class="steps"><ol><li>Language ID: Hindi, so Bhashini turns speech into text</li><li>Glossary, then Bhashini translates it to English</li><li>Textbook core, then each kept sentence is translated back to Hindi and spoken</li></ol></div><div class="mini"></div><div class="reply"><small>The Specialist</small>(the answer in Hindi, spoken by Flite and shown on the screen)</div></div>
+<div class="turn"><div class="said"><small>Student</small>Why do plants need sunlight for it?</div><div class="mini"></div><div class="steps"><ol><li>Rewritten from the last 3 turns: "What is the role of sunlight in photosynthesis?"</li><li>Textbook core, then checked</li></ol></div><div class="mini"></div><div class="reply"><small>The Specialist</small>Sunlight is crucial for photosynthesis. Chlorophyll, a green pigment in plants, captures sunlight, converting it into chemical energy to produce food for the plant.</div></div>
+<div class="turn"><div class="said"><small>Student</small>मुझे हीट एंडऑक्शन के बारे में बताएं</div><div class="mini"></div><div class="steps"><ol><li>Heard like this on the Jetson, 12 November: "heat endaction" is in no textbook</li><li>Since the fix (Mac so far), the gate offers a textbook word spelt like it that goes with "heat"</li></ol></div><div class="mini"></div><div class="reply"><small>The Specialist</small>Sorry, I did not catch that. Did you mean heat conduction? Please ask again. (in Hindi)</div></div>
+<div class="cols2" style="margin-top:8px"><div class="note"><b>Why partial</b><br>"Please explain photosynthesis" kept only one weak sentence, "This process helps plants grow and makes oxygen for us to breathe". "Can you give some examples of acids?" was refused.</div><div class="note"><b>Left, 1 dev day</b><br>Set the language thresholds from real Hindi, English and Hinglish recordings. Children's voices are untested. Students use it with a teacher until the safeguarding review.</div></div>
+<p class="sub" style="font-size:13px;margin:14px 0 0">Replies trimmed from the Mac journey run, 12 November 2026, Class 6 to 8 index, Qwen2.5-1.5B. See tests/journeys/report_mac_en.md.</p>
+</div></body></html>
