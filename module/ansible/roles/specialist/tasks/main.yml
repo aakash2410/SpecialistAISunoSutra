@@ -625,10 +625,20 @@
 
 # JetPack 6 leaves the screen's control pins (29, 31, 32) unable to drive, so the
 # screen stays blank. This adds them as outputs to jetson-io's overlay.
+# Copied, then run: the script module splits its path at spaces, as in "Specialist v1".
+- name: Copy the screen pin fix
+  tags: [boot, screen]
+  become: true
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../payload/tools/screen_pins.sh"
+    dest: "{{ specialist_root }}/screen_pins.sh"
+    mode: "0755"
+  when: specialist_screen | bool
+
 - name: Let the screen's control pins drive
   tags: [boot, screen]
   become: true
-  ansible.builtin.script: "{{ playbook_dir }}/../payload/tools/screen_pins.sh"
+  ansible.builtin.command: bash {{ specialist_root }}/screen_pins.sh
   register: specialist_screen_pins
   changed_when: "'Done.' in specialist_screen_pins.stdout"
   when: specialist_screen | bool
