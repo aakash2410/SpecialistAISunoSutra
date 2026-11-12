@@ -36,6 +36,12 @@ if [ ! -f "$LANGID/model.onnx" ]; then
   echo "!! No language ID model at $LANGID. Export it with tools/export_langid.py" >&2
   exit 1
 fi
+# Keep the inventory (which Jetson to install on) across rebuilds; it is not in the repo.
+INVENTORY_KEEP=""
+if [ -f "$OUT/ansible/inventory.ini" ]; then
+  INVENTORY_KEEP="$(mktemp)"
+  cp "$OUT/ansible/inventory.ini" "$INVENTORY_KEEP"
+fi
 rm -rf "$OUT"
 APP="$OUT/payload/app/python/pocketinfer"
 mkdir -p "$APP/models" "$APP/specialist" "$OUT/payload/corpus" "$OUT/payload/models" "$OUT/payload/tools"
@@ -97,6 +103,9 @@ cp "$ROOT/data/teacher_examples.txt" "$OUT/payload/teacher_examples.txt"
 
 # --- provisioning ------------------------------------------------------------
 cp -R "$ROOT/module/ansible" "$OUT/ansible"
+if [ -n "$INVENTORY_KEEP" ]; then
+  mv "$INVENTORY_KEEP" "$OUT/ansible/inventory.ini"
+fi
 cp "$ROOT/module/requirements-specialist.txt" "$OUT/"
 cp "$ROOT/module/README.md" "$OUT/README.md"
 echo "$VERSION" > "$OUT/VERSION"
