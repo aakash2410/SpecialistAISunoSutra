@@ -1,0 +1,6 @@
+# Managed by the Specialist Ansible role. Do not edit by hand: set specialist_ollama_env.
+# Memory settings for the answer model, added to whichever ollama.service is installed.
+[Service]
+{% for name, value in specialist_ollama_env.items() %}
+Environment="{{ name }}={{ value }}"
+{% endfor %}

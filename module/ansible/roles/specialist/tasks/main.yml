@@ -27,14 +27,37 @@
       This device has {{ specialist_free_gb.stdout }} GB free.
 
 # --------------------------------------------------------------- system packages
+# Only what the device runs or the install itself needs, without recommended extras.
+# Nothing is removed: JetPack and the Suno Sutra base install may already hold more.
+#   python3-venv          the two Python environments (pip comes with each one)
+#   python3-setuptools    Ansible's pip module needs it on the system Python
+#   unzip, git            unpack Bhashini, fetch Flite
+#   build-essential       build Flite, and any Bhashini package that has no wheel
+#   wget, perl            Flite's build and voice download
+#   libomp5-14            OpenMP for the CUDA build of CTranslate2
+#   libsndfile1           audio files in Bhashini
+#   curl                  the boot check and the Ollama installer
+#   ffmpeg                slower replay ("slower", "धीरे बोलो")
+#   alsa-utils            arecord and aplay, for the microphone and speaker
+#   v4l-utils             the camera's autofocus rule
+#   tesseract-ocr, packs  reading page photos
 - name: Install system packages
   tags: [system]
   become: true
   ansible.builtin.apt:
     update_cache: true
-    pkg: "{{ ['python3-venv', 'python3-pip', 'python3-setuptools', 'unzip', 'git', 'build-essential',
-              'libomp5-14', 'libsndfile1', 'perl', 'ffmpeg', 'alsa-utils', 'v4l-utils', 'tesseract-ocr']
+    cache_valid_time: 3600
+    install_recommends: false
+    pkg: "{{ ['python3-venv', 'python3-setuptools', 'unzip', 'git', 'build-essential', 'wget', 'perl',
+              'libomp5-14', 'libsndfile1', 'curl', 'ffmpeg', 'alsa-utils', 'v4l-utils', 'tesseract-ocr']
               + (specialist_ocr_packs | map('regex_replace', '^', 'tesseract-ocr-') | list) }}"
+
+# The downloaded .deb files are not needed once installed.
+- name: Clear apt's download cache
+  tags: [system]
+  become: true
+  ansible.builtin.command: apt-get clean
+  changed_when: false
 
 - name: Create the install folder
   tags: [system]
@@ -79,6 +102,7 @@
   ansible.builtin.apt:
     deb: "{{ specialist_assets_dir }}/ctranslate2-0.1.1-Linux.deb"
     state: present
+    install_recommends: false
 
 # ---------------------------------------------------------------------- Ollama
 - name: Check for Ollama
@@ -120,6 +144,35 @@
     mode: "0644"
   when: not specialist_ollama_unit.stat.exists
 
+# Memory settings (specialist_ollama_env). Also tagged boot, so the usual
+# --tags app,boot,verify update applies them.
+- name: Create the Ollama settings folder
+  tags: [ollama, boot]
+  become: true
+  ansible.builtin.file:
+    path: /etc/systemd/system/ollama.service.d
+    state: directory
+    mode: "0755"
+
+- name: Install the Ollama memory settings
+  tags: [ollama, boot]
+  become: true
+  ansible.builtin.template:
+    src: ollama-specialist.conf.j2
+    dest: /etc/systemd/system/ollama.service.d/specialist.conf
+    mode: "0644"
+  register: specialist_ollama_settings
+
+# Restarting unloads the answer model. The voice loop loads it again when it starts.
+- name: Restart Ollama with the new settings
+  tags: [ollama, boot]
+  become: true
+  ansible.builtin.systemd:
+    name: ollama
+    state: restarted
+    daemon_reload: true
+  when: specialist_ollama_settings is changed
+
 - name: Start Ollama
   tags: [ollama]
   become: true
@@ -142,6 +195,15 @@
   tags: [ollama]
   ansible.builtin.command: /usr/local/bin/ollama pull {{ specialist_llm_model }}
   when: specialist_llm_model not in specialist_ollama_models.stdout
+
+# Opt-in: -e specialist_prune_ollama_models=true. Never touches specialist_llm_model.
+- name: Remove the other Ollama models
+  tags: [ollama]
+  ansible.builtin.command: /usr/local/bin/ollama rm {{ item }}
+  loop: "{{ specialist_ollama_models.stdout_lines[1:] | select | map('split') | map('first') | list }}"
+  when:
+    - specialist_prune_ollama_models | bool
+    - item not in [specialist_llm_model, specialist_llm_model ~ ':latest']
 
 # -------------------------------------------------------------------- Bhashini
 - name: Unpack the Bhashini models
@@ -206,6 +268,7 @@
   tags: [bhashini]
   ansible.builtin.pip:
     name: "{{ specialist_assets_dir }}/ctranslate2-4.6.3-cp310-cp310-linux_aarch64.whl"
+    extra_args: --no-cache-dir
     virtualenv: "{{ specialist_bhashini_dir }}/venv"
     virtualenv_command: python3 -m venv
 
@@ -218,7 +281,7 @@
   ansible.builtin.shell: >-
     {{ specialist_bhashini_dir }}/venv/bin/python -c "import torch" 2>/dev/null
     && echo present
-    || {{ specialist_bhashini_dir }}/venv/bin/pip install --force-reinstall
+    || {{ specialist_bhashini_dir }}/venv/bin/pip install --no-cache-dir --force-reinstall
     --index-url {{ specialist_torch_cpu_index }} torch
   register: specialist_torch_install
   changed_when: "'present' not in specialist_torch_install.stdout"
@@ -227,14 +290,14 @@
   tags: [bhashini]
   ansible.builtin.pip:
     requirements: "{{ specialist_bhashini_dir }}/requirements.txt"
-    extra_args: "--index-url={{ specialist_torch_index }}"
+    extra_args: "--no-cache-dir --index-url={{ specialist_torch_index }}"
     virtualenv: "{{ specialist_bhashini_dir }}/venv"
 
 - name: Keep NumPy compatible with the Bhashini packages
   tags: [bhashini]
   ansible.builtin.pip:
     name: numpy<2
-    extra_args: "--index-url={{ specialist_torch_index }}"
+    extra_args: "--no-cache-dir --index-url={{ specialist_torch_index }}"
     virtualenv: "{{ specialist_bhashini_dir }}/venv"
 
 # Translation splits text with NLTK, whose data is not in the Bhashini archive.
@@ -275,14 +338,17 @@
     chdir: "{{ specialist_bhashini_dir }}/tts/flite"
     creates: "{{ specialist_bhashini_dir }}/tts/flite/voices/cmu_indic_hin_ab.flitevox"
 
+# Also tagged boot, so a change to its memory settings applies with the usual
+# --tags app,boot,verify update. "Start Bhashini" below restarts it in a bhashini run,
+# and "Restart Bhashini with the new settings" in a boot run.
 - name: Install the Bhashini service
-  tags: [bhashini]
+  tags: [bhashini, boot]
   become: true
   ansible.builtin.template:
     src: bhashini_models.service.j2
     dest: /etc/systemd/system/bhashini_models.service
     mode: "0644"
-  notify: restart bhashini
+  register: specialist_bhashini_unit
 
 - name: Start Bhashini
   tags: [bhashini]
@@ -326,11 +392,15 @@
     dest: "{{ specialist_root }}/requirements-specialist.txt"
     mode: "0644"
 
+# Its own environment, without the system's packages, so the CPU build of onnxruntime is
+# used rather than any GPU build installed system-wide. No download cache is kept.
 - name: Install the Specialist Python packages
   tags: [app]
   ansible.builtin.pip:
     requirements: "{{ specialist_root }}/requirements-specialist.txt"
+    extra_args: --no-cache-dir
     virtualenv: "{{ specialist_venv }}"
+    virtualenv_command: python3 -m venv
 
 - name: Install the pipeline code
   tags: [app]
@@ -354,6 +424,105 @@
       {{ specialist_venv }}/bin/python -c "from faster_whisper import download_model;
       download_model('{{ specialist_whisper_model }}', cache_dir='{{ specialist_root }}/models/whisper')"
     creates: "{{ specialist_root }}/models/whisper/models--Systran--faster-whisper-{{ specialist_whisper_model }}"
+
+# Models left by an earlier install are removed, so the code cannot load an old file and
+# the disk space comes back. embed.py, for one, would load a leftover model.onnx before
+# the shipped model_quantized.onnx. Each step checks what is in place before it removes
+# anything, and the folders in specialist_models_in_use are never removed.
+# On this computer, in the module. (The fileglob lookup cannot match a wildcard folder.)
+- name: List the model files this module ships
+  tags: [app]
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.find:
+    paths: "{{ playbook_dir }}/../payload/models"
+    recurse: true
+    depth: 2
+    hidden: true
+  register: specialist_payload_models
+
+- name: List the models this module ships
+  tags: [app]
+  ansible.builtin.set_fact:
+    specialist_shipped_model_files: "{{ specialist_shipped_model_files }}"
+    specialist_shipped_models: >-
+      {{ specialist_shipped_model_files | select('search', '\.onnx$')
+         | map('dirname') | unique | list }}
+  vars:
+    specialist_shipped_model_files: >-
+      {{ specialist_payload_models.files | map(attribute='path')
+         | map('relpath', playbook_dir ~ '/../payload/models')
+         | select('search', '^[^/]+/[^/]+$') | list }}
+
+- name: Find installed model folders
+  tags: [app]
+  ansible.builtin.find:
+    paths: "{{ specialist_root }}/models"
+    file_type: directory
+    hidden: true
+  register: specialist_installed_models
+
+- name: Remove model folders the pipeline does not load
+  tags: [app]
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ specialist_installed_models.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  when:
+    - specialist_shipped_models | length > 0
+    - (item.path | basename) not in specialist_shipped_models
+    - (item.path | basename) not in specialist_models_in_use
+
+# Top level of each shipped folder only. Subfolders are left alone.
+- name: Find the files in the shipped model folders
+  tags: [app]
+  ansible.builtin.find:
+    paths: "{{ specialist_shipped_models | map('regex_replace', '^', specialist_root ~ '/models/') | list }}"
+    hidden: true
+  register: specialist_installed_model_files
+  when: specialist_shipped_models | length > 0
+
+- name: Remove model files the module does not ship
+  tags: [app]
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ specialist_installed_model_files.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path | relpath(specialist_root ~ '/models') }}"
+  when:
+    - specialist_shipped_model_files | length > 0
+    - (item.path | relpath(specialist_root ~ '/models')) not in specialist_shipped_model_files
+
+- name: Check the English speech model is in place
+  tags: [app]
+  ansible.builtin.stat:
+    path: "{{ specialist_root }}/models/whisper/models--Systran--faster-whisper-{{ specialist_whisper_model }}/snapshots"
+  register: specialist_whisper_current
+
+- name: Find installed English speech models
+  tags: [app]
+  ansible.builtin.find:
+    paths: ["{{ specialist_root }}/models/whisper", "{{ specialist_root }}/models/whisper/.locks"]
+    patterns: "models--*"
+    file_type: directory
+    hidden: true
+  register: specialist_installed_whisper
+
+- name: Remove English speech models other than {{ specialist_whisper_model }}
+  tags: [app]
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ specialist_installed_whisper.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  when:
+    - specialist_whisper_current.stat.exists
+    - (item.path | basename) != 'models--Systran--faster-whisper-' ~ specialist_whisper_model
 
 - name: Install the specialist command
   tags: [app]
@@ -416,6 +585,7 @@
   become: true
   ansible.builtin.apt:
     pkg: gpiod
+    install_recommends: false
 
 - name: List the groups that give access to keys and GPIO
   tags: [boot]
@@ -438,6 +608,45 @@
     dest: /etc/systemd/system/specialist-voice.service
     mode: "0644"
 
+# Opt-in: -e specialist_headless=true. Applies from the next reboot, so it never closes a
+# desktop session that is open now. With it off, the role leaves the boot target alone.
+- name: Read the boot target
+  tags: [boot]
+  ansible.builtin.command: systemctl get-default
+  register: specialist_boot_target
+  changed_when: false
+
+- name: Boot to the text console instead of the desktop
+  tags: [boot]
+  become: true
+  ansible.builtin.command: systemctl set-default multi-user.target
+  when:
+    - specialist_headless | bool
+    - specialist_boot_target.stdout != 'multi-user.target'
+
+- name: Restart Bhashini with the new settings
+  tags: [boot]
+  become: true
+  ansible.builtin.systemd:
+    name: bhashini_models
+    state: restarted
+    daemon_reload: true
+  # Skipped when this run's bhashini steps already restarted it.
+  when:
+    - specialist_bhashini_unit is changed
+    - specialist_bhashini_health is not defined
+  register: specialist_bhashini_restart
+
+- name: Wait for Bhashini to answer again
+  tags: [boot]
+  ansible.builtin.uri:
+    url: http://127.0.0.1:11400/health
+  register: specialist_bhashini_back
+  retries: 40
+  delay: 5
+  until: specialist_bhashini_back.status == 200
+  when: specialist_bhashini_restart is changed
+
 # Restarted so a reinstall runs the new code and settings.
 - name: Start the voice loop at boot
   tags: [boot]
@@ -457,8 +666,55 @@
     dest: "{{ specialist_root }}/corpus/"
     mode: "0644"
 
+# The teacher's everyday examples (see python/pocketinfer/specialist/teacher_examples.py).
+# The blank template goes in only if there is no file yet, so a teacher's filled-in file
+# is never overwritten by a reinstall.
+- name: Install the blank teacher examples file
+  tags: [content, app, examples]
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../payload/teacher_examples.txt"
+    dest: "{{ specialist_root }}/teacher_examples.txt"
+    mode: "0644"
+    force: false
+
+# A file a teacher filled in and sent back: -e specialist_teacher_examples=/path/to/file.txt
+- name: Install the teacher's filled-in examples
+  tags: [content, app, examples]
+  ansible.builtin.copy:
+    src: "{{ specialist_teacher_examples }}"
+    dest: "{{ specialist_root }}/teacher_examples.txt"
+    mode: "0644"
+    backup: true
+  when: specialist_teacher_examples | length > 0
+  register: specialist_examples_copy
+
+# The voice loop reads the file when it starts.
+- name: Restart the voice loop to read the new examples
+  tags: [content, app, examples]
+  become: true
+  ansible.builtin.systemd:
+    name: specialist-voice
+    state: restarted
+  when:
+    - specialist_examples_copy is changed
+    - specialist_voice_autostart | bool
+
 # The module ships one index. Remove any other left by an earlier install, so the voice
 # loop cannot pick a stale one and content under licences no longer used leaves the device.
+# On this computer, in the module. (The fileglob lookup cannot match a wildcard folder,
+# so it found no shipped index and this step never removed anything.)
+- name: List the indexes this module ships
+  tags: [content]
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.find:
+    paths: "{{ playbook_dir }}/../payload/corpus"
+    patterns: manifest.json
+    recurse: true
+    depth: 3
+  register: specialist_payload_indexes
+
 - name: Find installed indexes
   tags: [content]
   ansible.builtin.find:
@@ -479,7 +735,8 @@
     - (item.path | basename) not in specialist_shipped_indexes
   vars:
     specialist_shipped_indexes: >-
-      {{ query('ansible.builtin.fileglob', playbook_dir ~ '/../payload/corpus/*/index/manifest.json')
+      {{ specialist_payload_indexes.files | map(attribute='path')
+         | select('search', '/index/manifest\.json$')
          | map('dirname') | map('dirname') | map('basename') | list }}
 
 # ---------------------------------------------------------------------- verify
@@ -499,6 +756,12 @@
     port: "{{ item }}"
     timeout: 300
   loop: [11434, 11400]
+
+- name: Note when the checks start
+  tags: [verify]
+  ansible.builtin.command: date '+%Y-%m-%d %H:%M:%S'
+  register: specialist_check_start
+  changed_when: false
 
 - name: Ask a question the corpus covers
   tags: [verify]
@@ -532,6 +795,38 @@
   register: specialist_check_tools
   changed_when: false
 
+# Ollama cuts a prompt that does not fit its context, which would change the answer
+# without an error. This catches it if a code change makes prompts longer than
+# OLLAMA_CONTEXT_LENGTH in specialist_ollama_env allows.
+- name: Look for prompts Ollama had to cut during the checks
+  tags: [verify]
+  become: true
+  ansible.builtin.shell: >-
+    journalctl -u ollama --since "{{ specialist_check_start.stdout }}" --no-pager
+    | grep -ci "truncating input" || true
+  register: specialist_check_truncation
+  changed_when: false
+
+- name: Check that every prompt fitted the answer model's context
+  tags: [verify]
+  ansible.builtin.assert:
+    that: specialist_check_truncation.stdout | int == 0
+    fail_msg: >-
+      Ollama cut {{ specialist_check_truncation.stdout }} prompt(s) to fit its context, which
+      changes answers. Raise OLLAMA_CONTEXT_LENGTH in specialist_ollama_env and run --tags boot,verify.
+    quiet: true
+
+# Taken before the voice loop starts again, with Ollama and Bhashini loaded.
+- name: Measure memory
+  tags: [verify]
+  ansible.builtin.shell: |
+    awk '/MemAvailable/ {printf "Memory available with the voice loop paused: %d MB\n", $2/1024}' /proc/meminfo
+    echo "Boot target: $(systemctl get-default)"
+    /usr/local/bin/ollama ps | tail -n +2 | awk '{print "Loaded in Ollama: " $0}'
+    echo "Ollama models on disk: $(/usr/local/bin/ollama list | tail -n +2 | awk '{print $1}' | tr '\n' ' ')"
+  register: specialist_check_memory
+  changed_when: false
+
 - name: Restart the voice loop
   tags: [verify]
   become: true
@@ -544,8 +839,9 @@
 - name: Show the results
   tags: [verify]
   ansible.builtin.debug:
-    msg:
-      - "English: {{ specialist_check_answer.stdout_lines | select('search', '^   · ') | first }}"
-      - "Refusal: {{ specialist_check_refusal.stdout_lines | select('search', 'REFUSED') | first }}"
-      - "Hindi: {{ specialist_check_hindi.stdout_lines | select('search', '^   · ') | first }}"
-      - "{{ specialist_check_tools.stdout }}"
+    msg: >-
+      {{ ['English: ' ~ (specialist_check_answer.stdout_lines | select('search', '^   · ') | first),
+          'Refusal: ' ~ (specialist_check_refusal.stdout_lines | select('search', 'REFUSED') | first),
+          'Hindi: ' ~ (specialist_check_hindi.stdout_lines | select('search', '^   · ') | first),
+          specialist_check_tools.stdout]
+         + specialist_check_memory.stdout_lines }}

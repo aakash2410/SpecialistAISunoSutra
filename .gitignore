@@ -28,3 +28,7 @@ module/ansible/inventory.ini
 
 # Stakeholder interview notes, kept private
 notes/
+
+# Harvest bookkeeping: resume state and logs, rebuilt by re-running the harvest
+corpus/*/raw/progress.jsonl
+corpus/*/raw/harvest.log

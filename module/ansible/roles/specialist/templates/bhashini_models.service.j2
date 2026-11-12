@@ -12,6 +12,10 @@ User={{ specialist_user }}
 Group={{ specialist_user }}
 WorkingDirectory={{ specialist_bhashini_dir }}
 ExecStart={{ specialist_bhashini_dir }}/venv/bin/python {{ specialist_bhashini_dir }}/main.py
+{% if specialist_malloc_arena_max %}
+# Fewer glibc memory arenas, so the service holds less freed memory. Output does not change.
+Environment=MALLOC_ARENA_MAX={{ specialist_malloc_arena_max }}
+{% endif %}
 Restart=always
 RestartSec=5
 

@@ -9,7 +9,7 @@ import pytest
 from pocketinfer.specialist import lesson_plan, quiz, revision
 from pocketinfer.specialist.pipeline import SentenceResult, SpecialistEngine
 from pocketinfer.specialist.session import Session, ask
-from pocketinfer.specialist.vector_index import VectorIndex, grade_of, grade_number
+from pocketinfer.specialist.vector_index import Retrieved, VectorIndex, grade_of, grade_number
 
 
 @pytest.mark.parametrize("said, grade", [
@@ -88,9 +88,26 @@ def _found(results):
 def test_a_search_for_a_class_uses_only_its_passages_and_untagged_ones(tmp_path):
     index = _index(tmp_path)
     assert _found(index.search(QUERY, top_k=4)) == ["seven", "old", "six", "six_eight"]
-    assert _found(index.search(QUERY, top_k=4, grade=6)) == ["old", "six", "six_eight"]
+    # The class's own book first, then shared and untagged ones to fill the list.
+    assert _found(index.search(QUERY, top_k=4, grade=6)) == ["six", "old", "six_eight"]
     assert _found(index.search(QUERY, top_k=4, grade="Class 7")) == ["seven", "old"]
     assert _found(index.search(QUERY, top_k=4, grade=8)) == ["old", "six_eight"]
+
+
+def test_a_class_s_own_books_come_before_books_shared_with_other_classes(tmp_path):
+    index = _index(tmp_path)
+    # "old" (untagged) scores 0.8 and "six" (class 6 alone) 0.6: class 6's own book wins.
+    assert _found(index.search(QUERY, top_k=1, grade=6, min_score=0.5)) == ["six"]
+    # Too low to answer from, so the shared and untagged passages are searched.
+    assert _found(index.search(QUERY, top_k=1, grade=6, min_score=0.7)) == ["old"]
+
+
+def test_a_class_s_books_are_used_only_if_the_gate_would_pass_them(tmp_path):
+    index = _index(tmp_path)
+    no_six = lambda found: found[0].content_id != "six"
+    assert _found(index.search(QUERY, top_k=1, grade=6, min_score=0.5, accept=no_six)) == ["old"]
+    nothing = lambda found: False
+    assert _found(index.search(QUERY, top_k=1, grade=6, accept=nothing)) == ["seven"]
 
 
 def test_a_class_with_no_passages_falls_back_to_every_passage(tmp_path):
@@ -118,7 +135,13 @@ def test_the_engine_passes_the_class_and_its_gate_to_the_search():
     engine.top_k, engine.min_score = 3, 0.8
     engine._search("acids")
     engine._search("acids", grade=7)
+    accept = calls[1].pop("accept")
     assert calls == [{"top_k": 20}, {"top_k": 20, "grade": 7, "min_score": 0.8}]
+    # The class's passages are kept only if the retrieval gate passes them.
+    passage = lambda text, score: Retrieved(score, text, "b", text.split()[0], "", 1, "")
+    assert accept([passage("Acids taste sour.", 0.9)])
+    assert not accept([passage("Acids taste sour.", 0.7)])
+    assert not accept([passage("Magnets attract iron.", 0.9)])
 
 
 PAGE = ("1. What is the colour of litmus in an acid? 2. Why do you think acids taste sour? "
@@ -178,7 +201,7 @@ def test_the_multi_grade_revision_journey():
     assert [r.index for r in results] == list(range(len(results)))
     assert results[4].citations == [CITE]
     assert engine.asked == [("Explain acids", 8)]
-    assert engine.searched == [("acids", 8)]          # the questions come from class 8 pages too
+    assert engine.searched == [("acids questions", 8)]   # the questions come from class 8 pages too
     assert (session.grade, session.revision_topic) == (8, "acids")
 
     # The teacher turns to the other class, and later comes back to this one.
@@ -256,3 +279,20 @@ def test_a_real_revision_is_grounded(specialist):
     assert texts[-1] == revision.CLOSE.format(topic="photosynthesis")
     assert sum(r.example for r in results) <= 1
     assert session.grade == 7
+
+
+def test_a_passage_that_starts_mid_sentence_gets_the_start_of_that_sentence(tmp_path):
+    first = ("Food is broken down in the cells. If the food is broken down with the use of oxygen, "
+             "it is called aerobic respiration.")
+    second = "it is called aerobic respiration. If it is broken down without oxygen, it is anaerobic respiration."
+    chunks = [{"text": first, "content_id": "b", "page": 3, "chunk_index": 0},
+              {"text": second, "content_id": "b", "page": 3, "chunk_index": 1},
+              {"text": second, "content_id": "c", "page": 3, "chunk_index": 0}]
+    np.save(tmp_path / "embeddings.npy", np.asarray([[1.0, 0.0], [0.0, 1.0], [0.6, 0.8]], dtype=np.float32))
+    (tmp_path / "chunks.jsonl").write_text("\n".join(json.dumps(c) for c in chunks), encoding="utf-8")
+    (tmp_path / "manifest.json").write_text(json.dumps({"chunk_overlap": 5}), encoding="utf-8")
+    index = VectorIndex(str(tmp_path))
+    top = index.search(np.asarray([0.0, 1.0], dtype=np.float32), top_k=1)[0]
+    assert top.text == "If the food is broken down with the use of oxygen, " + second
+    assert index.text_of(0) == first
+    assert index.text_of(2) == second   # another book: nothing to take from

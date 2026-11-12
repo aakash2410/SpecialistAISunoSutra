@@ -13,10 +13,12 @@ If no topic is named, the device asks for one and takes the next turn as the top
      students themselves ("What do I know about light?") are left out, since no answer to
      them can be checked. The answer model never writes a question. If there is no
      such question, the device says so and no quiz starts.
-  2. Each answer is judged against the textbook passages for the question (see judge).
+  2. Each answer is judged against the textbook passages for the question, and if they
+     do not support it, against the first sentence of the device's own grounded, checked
+     answer to the question (see judge).
   3. A right answer gets a fixed "That's right." Any other answer gets a fixed
-     "Not quite." and then the normal grounded, checked answer to the question, so the
-     feedback always comes from the textbook. If that answer is refused, the device says
+     "Not quite." and then the rest of that grounded answer, so the feedback always comes
+     from the textbook and is made only once. If that answer is refused, the device says
      it cannot check this one and moves on.
   4. Then the next question, until the last one, which gets a fixed closing sentence.
      "Stop the quiz" or "बस" ends it early.
@@ -35,7 +37,7 @@ from typing import Iterator, List, Optional, Tuple
 
 from ..models.verify import SUPPORT_THRESHOLD
 from . import lesson_plan
-from .grounding import _content_terms
+from .grounding import _STOPWORDS
 
 MAX_QUESTIONS = 6
 
@@ -88,11 +90,29 @@ _OUT_WORDS = re.compile(r"\b(?:products?|produced|formed|released?|given out|giv
 _IN_WORDS = re.compile(r"\b(?:raw materials?|requirements?|required|requires?|needs?|needed|reactants?|"
                        r"takes? in|taken in|use up|uses up)\b", re.IGNORECASE)
 # Words that link an answer to its question, not part of what it claims.
-_LINKS = {"because", "since", "out", "get", "gets", "got", "make", "makes", "made"}
+_LINKS = {"because", "since", "out", "get", "gets", "got", "make", "makes", "made", "through", "due",
+          "like", "called", "known", "help", "helps"}
+# Numbers are compared as digits: "22nd" and "twenty second" are both 22, and 37°C is 37 degrees Celsius.
+_UNIT_WORDS = ("zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
+               "fifteen sixteen seventeen eighteen nineteen").split()
+_ORDINAL_WORDS = ("first second third fourth fifth sixth seventh eighth ninth tenth eleventh twelfth "
+                  "thirteenth fourteenth fifteenth sixteenth seventeenth eighteenth nineteenth").split()
+_SMALL = {**{w: i for i, w in enumerate(_UNIT_WORDS)}, **{w: i + 1 for i, w in enumerate(_ORDINAL_WORDS)},
+          "twentieth": 20, "thirtieth": 30}
+_TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90}
+_DIGIT_WORDS = "|".join(w for w, n in _SMALL.items() if 0 < n < 10)
+_NUMBER_WORDS = re.compile(
+    rf"\b(?:({'|'.join(_TENS)})(?:[\s-]+({_DIGIT_WORDS}))?|({'|'.join(sorted(_SMALL, key=len, reverse=True))}))\b",
+    re.IGNORECASE)
+_ORDINAL = re.compile(r"\b(\d+)(?:st|nd|rd|th)\b", re.IGNORECASE)
+_CELSIUS = re.compile(r"(\d)\s*[°⁰º]\s*C\b")
+_NUMBER = re.compile(r"\d+")
 # Bars a passage sentence must clear to be used as evidence, chosen on the calibration pairs.
 MAX_SENTENCE_WORDS = 60
 MIN_CLEAN_SHARE = 0.7
 MIN_ANSWER_SHARE = 0.5
+# A word of this many letters or more also matches a longer form of it: "reflect" and "reflection".
+MIN_PREFIX = 5
 
 WHICH_TOPIC = "Which topic should the quiz be on?"
 NO_QUESTIONS = "I could not find any textbook questions on {topic} to ask, so there is no quiz."
@@ -224,9 +244,58 @@ def statement(question: str, answer: str) -> str:
     return f'The answer to "{question.strip()}" is: {answer.strip()}'
 
 
+def _digits(text: str) -> str:
+    """Numbers as digits: "twenty second March" and "22nd March" both become "22 March"."""
+    def spelt(m):
+        if m.group(1):
+            return str(_TENS[m.group(1).lower()] + (_SMALL[m.group(2).lower()] if m.group(2) else 0))
+        return str(_SMALL[m.group(3).lower()])
+    text = _NUMBER_WORDS.sub(spelt, text or "")
+    return _CELSIUS.sub(r"\1 degrees Celsius", _ORDINAL.sub(r"\1", text))
+
+
+def _stem(word: str) -> str:
+    """One form for a word's plural, past and -ing forms and British spellings:
+    "substances" and "substance", "carries" and "carry", "haemoglobin" and "hemoglobin"."""
+    if len(word) > 5:
+        word = word.replace("ae", "e").replace("oe", "e")
+    if word.endswith("ies") and len(word) > 4:
+        word = word[:-3] + "y"
+    elif word.endswith("s") and not word.endswith("ss") and len(word) > 3:
+        word = word[:-1]
+    if word.endswith("ed") and len(word) > 5:
+        word = word[:-2]
+    elif word.endswith("ing") and len(word) > 6:
+        word = word[:-3]
+    return word[:-1] if word.endswith("e") and len(word) > 4 else word
+
+
+def _terms(text: str) -> set:
+    """The content words of a text, stemmed, and its numbers as digits."""
+    text = _digits(text).lower()
+    words = {_stem(w) for w in re.findall(r"[^\W\d_]+", text) if len(w) >= 3 and w not in _STOPWORDS}
+    return words | set(_NUMBER.findall(text))
+
+
+_LINK_TERMS = {_stem(w) for w in _LINKS}
+
+
 def _answer_terms(question: str, answer: str) -> set:
-    """The content words the answer adds to the question."""
-    return _content_terms(answer) - _content_terms(question) - _LINKS
+    """The content words and numbers the answer adds to the question."""
+    return _terms(answer) - _terms(question) - _LINK_TERMS
+
+
+def _named(new: set, terms: set) -> set:
+    """The answer's words that a text names, a short word also matching a longer form of it."""
+    return {t for t in new if t in terms or not t.isdigit() and len(t) >= MIN_PREFIX
+            and any(s.startswith(t) or len(s) >= MIN_PREFIX and t.startswith(s) for s in terms if not s.isdigit())}
+
+
+def _parts(question: str, answer: str) -> List[set]:
+    """The parts of a list answer, each as its own words: "glucose and oxygen" has two."""
+    answer = re.sub(r"^\W*(?:because(?: of)?|due to|it is|they are)\s+", "", answer.strip(), flags=re.I)
+    parts = (_answer_terms(question, p) for p in re.split(r",\s*(?:and\s+)?|\s+and\s+", answer))
+    return [p for p in parts if p]
 
 
 def _evidence(engine, question: str) -> List[str]:
@@ -258,25 +327,85 @@ def _wrong_side(question: str, new: set, sentence: str) -> bool:
     m = _TURNS_INTO.search(sentence)
     if m:
         side = sentence[m.end():] if asks_out else sentence[:m.start()]
-        return len(new & _content_terms(side)) < MIN_ANSWER_SHARE * len(new)
+        return len(_named(new, _terms(side))) < MIN_ANSWER_SHARE * len(new)
     # No turning point: a sentence only about what goes in cannot answer what comes out.
     names_in, names_out = bool(_IN_WORDS.search(sentence)), bool(_OUT_WORDS.search(sentence))
     return (names_in and not names_out) if asks_out else (names_out and not names_in)
 
 
-def judge(engine, question: str, answer: str) -> bool:
+def _claim(question: str, answer: str) -> Optional[Tuple[set, str]]:
+    """The answer's own words and its statement, or None if it adds nothing to judge."""
+    new = _answer_terms(question, answer)
+    if _NO_IDEA.search(answer or "") or not new:
+        return None
+    return new, _digits(statement(question, answer))
+
+
+def _supports(engine, question: str, new: set, claim: str, sentence: str, *premises: str) -> set:
+    """The answer's words a sentence names, if it supports the claim; else an empty set.
+
+    The sentence must name at least half of the answer's words and every number in it,
+    give the answer on the side the question asks about, and the verifier must score it
+    (or one of ``premises``, which contain it) at SUPPORT_THRESHOLD or more.
+    """
+    named = _named(new, _terms(sentence))
+    if (len(named) < MIN_ANSWER_SHARE * len(new) or not {t for t in new if t.isdigit()} <= named
+            or _wrong_side(question, new, sentence)):
+        return set()
+    for premise in (sentence, *premises):
+        if engine.verifier.support_score(_digits(premise), claim) >= SUPPORT_THRESHOLD:
+            return named
+    return set()
+
+
+def judge_passages(engine, question: str, answer: str) -> bool:
+    """Rules 1 to 3 of ``judge``: the answer against the passages alone."""
+    claim = _claim(question, answer)
+    if claim is None:
+        return False
+    new, text = claim
+    parts = _parts(question, answer)
+    named: set = set()
+    for sentence in _evidence(engine, question):
+        named |= _supports(engine, question, new, text, sentence)
+        if named and all(part & named for part in parts):
+            return True
+    return False
+
+
+def judge_said(engine, question: str, answer: str, said: str) -> bool:
+    """Rule 4 of ``judge``: the answer against the first sentence of the device's own answer."""
+    claim = _claim(question, answer)
+    if claim is None or not said:
+        return False
+    new, text = claim
+    return bool(_supports(engine, question, new, text, said, f"{question} {said}"))
+
+
+def judge(engine, question: str, answer: str, said: Optional[str] = None) -> bool:
     """Whether the textbook supports the student's answer. The rule, which is deterministic:
 
-    1. The answer must add a content word the question does not already have, so
-       repeating the question or saying "I don't know" is never right.
-    2. The answer is made into one statement with the question (see ``statement``).
-    3. It is right if one sentence from the top passages for the question (see
-       ``_evidence``) has at least half of the answer's own content words, and the
-       verifier scores it as supporting the statement at SUPPORT_THRESHOLD (0.9) or more,
-       the same bar every answer sentence has to clear.
-    4. If the question asks only what goes in or only what comes out (the products of
-       photosynthesis, say), the sentence must give the answer on that side: after
+    1. The answer must add a content word or number the question does not already have,
+       so repeating the question or saying "I don't know" is never right. Words are
+       compared in one form ("substances" and "substance", "haemoglobin" and
+       "hemoglobin", "reflect" and "reflection"), and numbers as digits ("22nd" and
+       "twenty second" are 22, 37°C is 37 degrees Celsius).
+    2. The answer is made into one statement with the question (see ``statement``). A
+       sentence supports it if it names at least half of the answer's own words and every
+       number in it, and the verifier scores it as supporting the statement at
+       SUPPORT_THRESHOLD (0.9) or more, the same bar every answer sentence has to clear.
+       If the question asks only what goes in or only what comes out (the products of
+       photosynthesis, say), the sentence must also give the answer on that side: after
        "converted into" for products, and never in a sentence only about what is needed.
+    3. It is right if sentences from the top passages for the question (see ``_evidence``)
+       support it and, between them, name every part of a list answer: "oxygen and
+       nitrogen" is not right because a sentence says "food and oxygen".
+    4. Or it is right if the first sentence of the device's own answer to the question,
+       ``said``, supports it, on its own or after the question. That answer has already
+       been checked against the passages, and it is a clean sentence written for this
+       question, so it can say "carbohydrates" where the student says "glucose", or
+       "Light travels in straight lines" to "Why can we not see light through a bent pipe?".
+       Only its first sentence counts, so the student is not kept waiting.
 
     The shared words stop the verifier agreeing with a sentence that is about something
     else: on its own it said "Plants make food in sunlight" supports "Snakes use energy
@@ -284,17 +413,7 @@ def judge(engine, question: str, answer: str) -> bool:
     textbook does not cover, is "not quite", and the student then hears the textbook's own
     answer, so a right answer marked wrong costs less than a wrong one marked right.
     """
-    new = _answer_terms(question, answer)
-    if _NO_IDEA.search(answer or "") or not new:
-        return False
-    claim = statement(question, answer)
-    for sentence in _evidence(engine, question):
-        if len(new & _content_terms(sentence)) < MIN_ANSWER_SHARE * len(new) \
-                or _wrong_side(question, new, sentence):
-            continue
-        if engine.verifier.support_score(sentence, claim) >= SUPPORT_THRESHOLD:
-            return True
-    return False
+    return judge_passages(engine, question, answer) or said is not None and judge_said(engine, question, answer, said)
 
 
 class _Say:
@@ -331,14 +450,20 @@ def _start(engine, session, topic: str, say: _Say) -> Iterator:
 
 
 def _feedback(engine, question: str, answer: str, say: _Say) -> Iterator:
-    if judge(engine, question, answer):
+    if judge_passages(engine, question, answer):
         yield say(RIGHT)
         return
+    # Not supported by the passages alone: the device's own answer is the feedback, and
+    # its first sentence is the last chance for the answer to be right (see judge).
     grounded = engine.stream_answer(question, target_language=say.target_language)
     first = next(grounded, None)
     if first is None or first.refused:
         # Never "not quite" when the textbook cannot say what is right.
         yield say(CANT_CHECK)
+        return
+    if judge_said(engine, question, answer, first.text_en):
+        grounded.close()
+        yield say(RIGHT)
         return
     yield say(NOT_QUITE)
     for sentence in (first, *grounded):

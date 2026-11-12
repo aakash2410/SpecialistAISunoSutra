@@ -50,7 +50,33 @@ mkdir -p "$OUT/payload/app/local"
 cp "$ROOT/local/"*.py "$OUT/payload/app/local/"
 
 # --- models and tools --------------------------------------------------------
-cp -R "$E5" "$VERIFIER" "$SAFETY" "$LANGID" "$OUT/payload/models/"
+# Only the files each loader reads, so nothing else in a model folder reaches the device.
+# The role removes any other model folder or file an earlier install left there.
+ship_model() {  # ship_model <model folder> <file>...
+  local src="$1" dest="$OUT/payload/models/$(basename "$1")"
+  shift
+  mkdir -p "$dest"
+  for f in "$@"; do
+    cp "$src/$f" "$dest/"
+    if [ -f "$src/$f.data" ]; then cp "$src/$f.data" "$dest/"; fi   # ONNX external weights
+  done
+}
+# The same choice as _find_onnx_file in python/pocketinfer/models/embed.py.
+E5_ONNX=""
+for f in model.onnx model_quantized.onnx model_qint8.onnx; do
+  if [ -f "$E5/$f" ]; then E5_ONNX="$f"; break; fi
+done
+if [ -z "$E5_ONNX" ]; then
+  E5_ONNX="$(cd "$E5" && ls ./*.onnx 2>/dev/null | sort | head -1 | sed 's|^\./||')"
+fi
+if [ -z "$E5_ONNX" ]; then
+  echo "!! No .onnx file in $E5" >&2
+  exit 1
+fi
+ship_model "$E5" "$E5_ONNX" tokenizer.json
+ship_model "$VERIFIER" model.onnx tokenizer.json config.json
+ship_model "$SAFETY" model.onnx tokenizer.json config.json
+ship_model "$LANGID" model.onnx labels.json
 cp "$ROOT/tools/fetch_assets.py" "$ROOT/module/assets.json" "$OUT/payload/tools/"
 
 # --- content: the one baked index the device will use, not raw harvests ------
@@ -65,13 +91,18 @@ echo "==> Shipping index $name"
 mkdir -p "$OUT/payload/corpus/$name"
 cp -R "$INDEX" "$OUT/payload/corpus/$name/"
 
+# --- the blank teacher examples file: installed only where none exists yet ---
+cp "$ROOT/data/teacher_examples.txt" "$OUT/payload/teacher_examples.txt"
+
 # --- provisioning ------------------------------------------------------------
 cp -R "$ROOT/module/ansible" "$OUT/ansible"
 cp "$ROOT/module/requirements-specialist.txt" "$OUT/"
 cp "$ROOT/module/README.md" "$OUT/README.md"
 echo "$VERSION" > "$OUT/VERSION"
 
+find "$OUT" \( -name .DS_Store -o -name __pycache__ \) -prune -exec rm -rf {} +
 echo "==> Wrote $OUT ($(du -sh "$OUT" | cut -f1))"
+du -sh "$OUT/payload/models/"* "$OUT/payload/corpus/"* "$OUT/payload/app" | sed "s|$OUT/payload/|    |"
 find "$OUT" -type f | sed "s|$OUT|    dist/specialist-module|" | sort
 
 if [ "${1:-}" = "--tar" ]; then

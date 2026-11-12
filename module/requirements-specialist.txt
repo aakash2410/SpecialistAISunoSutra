@@ -1,16 +1,26 @@
 # Python packages for the Specialist environment (/opt/specialist/venv).
 # Bhashini has its own environment and requirements, shipped inside its archive.
+#
+# Only what the device code imports at run time (python/pocketinfer and local/). Building
+# indexes, training and exporting models (PyMuPDF, torch, transformers, speechbrain,
+# datasets and so on) happen on a computer, never on the device, and are in the repo's
+# requirements.txt instead.
 
 # Keep NumPy below 2. Packages on the Jetson built for NumPy 1 break under NumPy 2.
 numpy<2
+# Bhashini's speech input, translation and speech, over HTTP.
 requests
 
-# Client for the local Ollama service.
+# Client for the local Ollama service. Brings httpx and pydantic.
 ollama
 
-# Retrieval: multilingual-e5-small on ONNX, with no PyTorch.
+# Retrieval, the answer check, the safety check and language ID, all on ONNX, with no
+# PyTorch. The CPU build: never onnxruntime-gpu, which loads the CUDA libraries into the
+# voice loop and takes memory the answer model needs.
 onnxruntime
 tokenizers
 
-# English speech input: tiny Whisper, on the CPU.
+# English speech input: tiny Whisper, on the CPU. Brings ctranslate2 (CPU build), av,
+# which faster-whisper imports when it loads, and huggingface_hub. It only loads for
+# English speech.
 faster-whisper

@@ -18,6 +18,42 @@ specialist_llm_model: qwen2.5:1.5b
 # English speech input. Hindi goes through Bhashini.
 specialist_whisper_model: tiny.en
 
+# Model folders the pipeline code loads from {{ specialist_root }}/models. The install
+# removes any other folder there, left by an earlier install, and never removes these.
+specialist_models_in_use:
+  - multilingual-e5-small-onnx   # retrieval (pocketinfer/models/embed.py)
+  - nli-deberta-v3-base-onnx     # answer check (pocketinfer/models/verify.py)
+  - nli-safety-onnx              # safety check (pocketinfer/specialist/safety.py)
+  - lang-id-ecapa-onnx           # spoken language ID (pocketinfer/models/langid.py)
+  - whisper                      # English speech input (pocketinfer/models/whisper.py)
+
+# ------------------------------------------------------------------------ memory
+# Ollama server settings, added as a systemd drop-in so they apply whoever installed the
+# Ollama unit. One model loaded and one request at a time, which is all the voice loop
+# sends. The longest grounded prompt is about 1,100 tokens (three passages of at most
+# about 1,300 characters each) plus 128 to answer, so 2048 tokens of context fit it with
+# room to spare and use half the memory of Ollama's usual 4096. The verify tag fails if
+# Ollama ever had to cut a prompt to fit.
+specialist_ollama_env:
+  OLLAMA_MAX_LOADED_MODELS: "1"
+  OLLAMA_NUM_PARALLEL: "1"
+  OLLAMA_CONTEXT_LENGTH: "2048"
+
+# glibc memory arenas for the voice loop and Bhashini. Both are multi-threaded Python
+# processes, and glibc's default of up to 8 arenas per core holds freed memory that
+# never goes back. 2 keeps less of it. Answers do not change. Set "" for glibc's default.
+specialist_malloc_arena_max: "2"
+
+# Boot to the text console instead of the desktop, which frees the memory the desktop
+# holds (about 800 MB on JetPack 6). Off by default: the role never changes this on its
+# own. Takes effect at the next reboot. Undo with: sudo systemctl set-default graphical.target
+specialist_headless: false
+
+# Delete every Ollama model except specialist_llm_model, for example ones the Suno Sutra
+# base install pulled. They take disk, not memory, unless something asks for them. Off by
+# default, because other software on the device may use them.
+specialist_prune_ollama_models: false
+
 # Tesseract language packs for reading textbook pages.
 specialist_ocr_packs: [hin]
 
@@ -36,6 +72,12 @@ specialist_camera_product: "6366"
 
 # Free disk space required before installing, in GB.
 specialist_min_free_gb: 15
+
+# A teacher's filled-in everyday examples file, from data/teacher_examples.txt. Leave empty
+# to keep the file already on the device. Set it to install a returned file, which replaces
+# the one there (the old one is kept as a backup):
+#   -e specialist_teacher_examples=/path/to/teacher_examples.txt --tags examples
+specialist_teacher_examples: ""
 
 # A question the installed corpus covers, used by the final checks.
 specialist_verify_question: What is photosynthesis?

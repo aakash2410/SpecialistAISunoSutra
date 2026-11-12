@@ -79,6 +79,132 @@ def page_problem(text: str) -> Optional[str]:
     return None
 
 
+# Words that mark a page's subject, for books that bind science with other subjects, such as
+# the Tamil Nadu term books (science and social science in one PDF). Only strong markers:
+# words science pages rarely use. Checked by eye on the 11 mixed-subject books in the
+# Class 6 to 8 harvest (12 November).
+_SUBJECT_WORDS = {
+    "social": set("""king kings kingdom kingdoms dynasty dynasties empire empires emperor emperors ruler rulers
+        reign reigned sultan sultans sultanate mughal mughals chola cholas pandya pandyas rajput rajputs
+        temple temples inscription inscriptions inscribed coins century centuries battle battles war wars
+        invasion invaded conquered conquest throne court courts capital administration administrative
+        merchants trade traders constitution constitutional democracy democratic government governments
+        election elections vote voting voters party parties parliament minister ministers president
+        governor citizen citizens equality rights panchayat municipal municipality economy economic
+        production market markets labour entrepreneur tax taxes taxation bank banks income money
+        latitude longitude continent continents settlement settlements population census map maps
+        tourism tourist culture religion religious caste festival festivals monument monuments fort
+        british portuguese colonial freedom independence movement revolt rebellion historians history
+        historical archaeological civilisation civilization society social rural urban army navy military
+        soldiers defence foreign treaty alignment nations countries prehistoric palaeolithic paleolithic
+        neolithic megalithic america africa asia europe australia antarctica""".split()),
+    "maths": set("""fraction fractions numerator denominator denominators integer integers equation equations
+        perimeter triangle triangles angle angles polygon polygons algebra algebraic ratio ratios
+        proportion decimals decimal multiply multiplication subtract subtraction divisor divisible lcm hcf
+        geometry symmetry simplify quadrilateral rectangle parallelogram rhombus numerals digit digits
+        percentage percent profit loss interest""".split()),
+    "language": set("""noun nouns pronoun pronouns verb verbs adjective adjectives adverb adverbs tense grammar
+        poem poet stanza vocabulary synonym synonyms antonym antonyms sentence sentences paragraph""".split()),
+    "science": set("""cell cells plant plants animal animals energy force forces acid acids base bases salt
+        salts light heat electric electricity current circuit magnet magnets magnetic temperature oxygen
+        carbon dioxide hydrogen nitrogen matter atom atoms molecule molecules element elements compound
+        compounds mixture mixtures organism organisms bacteria microorganisms fungi virus disease diseases
+        reproduction flower flowers leaf leaves root roots stem seed seeds soil motion speed mass
+        density chemical reaction experiment liquid liquids solid solids gas gases water digestion
+        blood heart body organ organs tissue tissues nutrition photosynthesis respiration friction
+        pressure sound waves mirror lens reflection fibre fibres metals metal acid fuel combustion
+        germination pollination evaporation condensation vapour substance substances""".split()),
+}
+_SUBJECT_WINDOW = 2
+_SUBJECT_TOKEN = re.compile(r"[a-z]+")
+
+
+def _subject_hits(text: str) -> collections.Counter:
+    words = _SUBJECT_TOKEN.findall(text.lower())
+    hits: collections.Counter = collections.Counter()
+    for subject, vocabulary in _SUBJECT_WORDS.items():
+        hits[subject] = sum(w in vocabulary for w in words)
+    return hits
+
+
+def subject_of_pages(texts: List[str]) -> List[str]:
+    """The subject of each page of one book, in page order: science, social, maths or language.
+
+    A book's subjects come in runs of pages, so each page is judged with the pages either
+    side of it (its own page counts twice). Science wins a tie, so a page with no markers
+    stays in.
+    """
+    hits = [_subject_hits(t) for t in texts]
+    labels = []
+    for i in range(len(texts)):
+        total: collections.Counter = collections.Counter()
+        for j in range(max(0, i - _SUBJECT_WINDOW), min(len(texts), i + _SUBJECT_WINDOW + 1)):
+            for subject, n in hits[j].items():
+                total[subject] += n * (2 if j == i else 1)
+        best = max(_SUBJECT_WORDS, key=lambda s: (total[s], s == "science"))
+        labels.append(best if total[best] > total["science"] else "science")
+    return labels
+
+
+# Subjects DIKSHA uses for science books. A book tagged with any other subject as well, such
+# as "Science, Social Science", has its pages checked one by one (see drop_non_science_pages).
+SCIENCE_SUBJECTS = {"science", "physics", "biology", "chemistry", "physical science", "life science",
+                    "environmental studies", "environmental science", "evs"}
+
+
+def _subjects(doc: dict) -> Set[str]:
+    value = doc.get("subject") or []
+    values = value if isinstance(value, (list, tuple)) else [value]
+    return {str(v).strip().lower() for v in values if v}
+
+
+def drop_non_science_pages(docs: List[dict]) -> Tuple[List[dict], dict]:
+    """Drop the pages of mixed-subject books that are not science. Returns (kept, counts).
+
+    The Tamil Nadu term books bind science and social science in one PDF, and one of them
+    is really a maths book, so their history, civics, maths and grammar pages would answer
+    questions this science-only index should refuse. Books tagged only with science
+    subjects are left alone.
+    """
+    pages = collections.defaultdict(list)
+    for i, doc in enumerate(docs):
+        if _subjects(doc) - SCIENCE_SUBJECTS:
+            pages[doc.get("content_id")].append(i)
+    drop = set()
+    for rows in pages.values():
+        rows.sort(key=lambda i: docs[i].get("page", 0))
+        labels = subject_of_pages([docs[i].get("text", "") for i in rows])
+        drop.update(i for i, label in zip(rows, labels) if label != "science")
+    kept = [d for i, d in enumerate(docs) if i not in drop]
+    return kept, {"dropped: not science (mixed-subject book)": len(drop)} if drop else {}
+
+
+# A book tagged with more classes than this is a general resource, not a class's textbook.
+MAX_CLASSES = 3
+
+
+def drop_other_classes(docs: List[dict], classes) -> Tuple[List[dict], dict]:
+    """Drop books tagged with a class outside ``classes``, or with more than MAX_CLASSES
+    classes. Returns (kept, counts).
+
+    DIKSHA tags some books with many classes, such as "Artificial Intelligence Integration in
+    Science" for Classes 6 to 10. In the Class 6 to 8 index it won class searches for Classes
+    6, 7 and 8 alike, and its pages are written for other classes too. The 63 such books
+    were 1,555 of 54,065 passages and reached the top 3 for one of 125 test questions.
+    """
+    wanted = {str(c).strip() for c in classes}
+    kept: List[dict] = []
+    dropped = 0
+    for doc in docs:
+        grade = doc.get("grade") or []
+        grades = {str(g).strip() for g in (grade if isinstance(grade, (list, tuple)) else [grade]) if g}
+        if grades and (not grades <= wanted or len(grades) > MAX_CLASSES):
+            dropped += 1
+        else:
+            kept.append(doc)
+    return kept, {"dropped: book for other classes": dropped} if dropped else {}
+
+
 def remove_unwanted(docs: List[dict]) -> Tuple[List[dict], dict]:
     """Drop lesson plans, front matter and repeated pages. Returns (kept, counts)."""
     kept: List[dict] = []
@@ -124,10 +250,33 @@ def english_vocabulary(chunks: List[dict]) -> Set[str]:
     return {w for w, books in books_with_word.items() if books >= _VOCABULARY_MIN_BOOKS}
 
 
+# Wikipedia articles uploaded as DIKSHA items keep their reference marks, such as "[3]".
+# They are written for adults, and they answered off-topic questions such as "What is DNA
+# replication?" and "How does a jet engine work?". Wikipedia is CC BY-SA, not CC BY, too.
+# In the Class 6 to 8 harvest, 50 items have one mark per 10 passages or more and every
+# other item has fewer than one per 50.
+_CITATION_RE = re.compile(r"(?<![\d\]])\[(?:\d{1,3}|citation needed)\]")
+_MIN_CITATIONS_PER_PASSAGE = 0.1
+_MIN_CITATIONS = 3
+
+
+def encyclopaedia_copies(chunks: List[dict]) -> Set[str]:
+    """The content_ids of items whose passages carry Wikipedia reference marks."""
+    passages: collections.Counter = collections.Counter()
+    marks: collections.Counter = collections.Counter()
+    for chunk in chunks:
+        cid = chunk.get("content_id")
+        passages[cid] += 1
+        marks[cid] += len(_CITATION_RE.findall(chunk["text"]))
+    return {cid for cid, n in passages.items()
+            if marks[cid] >= _MIN_CITATIONS and marks[cid] / n >= _MIN_CITATIONS_PER_PASSAGE}
+
+
 def clean_chunks(chunks: List[dict]) -> Tuple[List[dict], dict]:
     """Drop passages a teacher's question should not land on. Returns (kept, counts)."""
     vocabulary = english_vocabulary(chunks)
     check_garble = bool(vocabulary)
+    copies = encyclopaedia_copies(chunks)
 
     kept: List[dict] = []
     counts: collections.Counter = collections.Counter()
@@ -135,6 +284,8 @@ def clean_chunks(chunks: List[dict]) -> Tuple[List[dict], dict]:
         text = chunk["text"]
         if _TEACHER_FILE_RE.search(_book(chunk)):
             counts["dropped: teacher's book"] += 1
+        elif chunk.get("content_id") in copies:
+            counts["dropped: encyclopaedia copy"] += 1
         elif _FRONT_MATTER_RE.search(text):
             counts["dropped: front matter"] += 1
         elif check_garble and _is_garbled(text, vocabulary):

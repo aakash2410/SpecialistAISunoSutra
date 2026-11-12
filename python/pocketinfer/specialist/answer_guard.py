@@ -73,9 +73,13 @@ def reversed_direction(sentence: str, passage: str) -> bool:
                for a, b in _FROM_TO.findall(sentence))
 
 
-def unseen_name(sentence: str, passage: str) -> bool:
-    """A capitalised word after the sentence start that the passage never uses."""
-    source = _words(passage)
+def unseen_name(sentence: str, passage: str, allowed: Iterable[str] = ()) -> bool:
+    """A capitalised word after the sentence start that the passage never uses.
+
+    ``allowed`` is for examples only: names, in lower case, from the teacher's own everyday
+    examples (teacher_examples.names_in), which the children know. Answers never pass it.
+    """
+    source = _words(passage) | set(allowed)
     return any(w.lower() not in source for w in _NAME.findall(sentence.split(" ", 1)[-1]) if w.lower() not in _NOT_NAMES)
 
 
@@ -174,10 +178,14 @@ def unsupported_credit(sentence: str, passage: str) -> bool:
     return True
 
 
-def contradicts(sentence: str, passages: Iterable[str]) -> bool:
-    """True when the sentence flips a fact against every passage it could have come from."""
-    checks = (wrong_number, flipped_opposite, reversed_direction, unseen_name, dropped_negation,
-              unsupported_credit)
+def contradicts(sentence: str, passages: Iterable[str], allowed_names: Iterable[str] = ()) -> bool:
+    """True when the sentence flips a fact against every passage it could have come from.
+
+    ``allowed_names`` goes to unseen_name, for examples only (see there).
+    """
+    allowed_names = set(allowed_names)
+    checks = (wrong_number, flipped_opposite, reversed_direction,
+              lambda s, p: unseen_name(s, p, allowed_names), dropped_negation, unsupported_credit)
     passages = list(passages)
     return bool(passages) and all(any(c(sentence, p) for c in checks) for p in passages)
 

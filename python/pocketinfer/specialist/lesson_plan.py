@@ -39,6 +39,18 @@ MAX_QUESTIONS = 2
 CLEAN_SHARE = 0.9
 # Pages either side of each top search result that questions may come from.
 NEAR_PAGES = 2
+# Questions are looked for near the top results of a search for "<topic> questions", best
+# first. A search for the topic alone finds pages that explain it, and on the Class 6 to 8
+# index those rarely had a clean question near them: photosynthesis had none in the top 3
+# results, and 1 in the top 20. Asking for questions found exercise and question-bank pages:
+# of 42 common topics, 37 had 3 questions or more, against 7 before (12 November).
+QUESTION_QUERY = "{topic} questions"
+QUESTION_RESULTS = 15
+# Two printings of one question, with small changes in wording, count as one: when this
+# share of the shorter one's content words (3 or more) are in the other. "What are the two
+# main products of photosynthesis?" and "What are the two products formed during the process
+# of photosynthesis?" share 3 of 4.
+SAME_QUESTION = 0.75
 
 _PLAN = re.compile(
     r"\b(lesson[- ]?plans?|teaching plans?|plan (?:a |the |my |our )?(?:lesson|class|period)s?)\b"
@@ -71,14 +83,17 @@ _SENTENCES = re.compile(r"[.;!?।]+")
 # Where a remark about the last class stops and the next request starts.
 _TURN = re.compile(r",|\b(?:and now|now|so|but|can you|could you|please|give|i need|i want)\b", re.IGNORECASE)
 
+# A question starts a text, follows the end of a sentence, or follows its number in a list:
+# "3. What ...", "(ii) Which ...", "b) How ...", or "? 4 How ..." where a scan lost the dot.
 _QUESTION = re.compile(
-    r"(?:^|(?<=[.!?:])\s+|\d+[.)]\s*)((?:What|Why|How|Which|Where|When|Who|Name|Define|Explain|"
+    r"(?:^|(?<=[.!?:])\s+(?:\d{1,2}\s+)?|\d+[.)]\s*|\((?:[ivx]{1,4}|[a-h])\)\s*|(?<![\w(])(?:[ivx]{1,4}|[a-h])\)\s*)"
+    r"((?:What|Why|How|Which|Where|When|Who|Name|Define|Explain|"
     r"Describe|Give|State|List)\b[^.?!]{12,160}\?)"
 )
 # A question that needs its page to make sense: a pointing word, a figure, an activity.
 _NEEDS_PAGE = re.compile(
     r"\b(it|its|this|that|these|those|they|them|their|he|she|his|her|above|below|following|"
-    r"given|shown|each|figure|fig|table|activity|observe|your)\b",
+    r"given|shown|each|figure|fig|table|activity|observe|your|now)\b",
     re.IGNORECASE,
 )
 _WORD = re.compile(r"[a-z]{3,}")
@@ -230,23 +245,48 @@ def _clean_share(text: str, vocabulary) -> float:
     return sum(w in vocabulary for w in words) / max(1, len(words))
 
 
+def _same(a: str, b: str) -> bool:
+    """The same question, printed in two books with different spacing or wording."""
+    if re.sub(r"[^a-z0-9]", "", a.lower()) == re.sub(r"[^a-z0-9]", "", b.lower()):
+        return True
+    x, y = _content_terms(a), _content_terms(b)
+    shorter = min(len(x), len(y))
+    return shorter >= 3 and len(x & y) / shorter >= SAME_QUESTION
+
+
+def _near_chunks(engine, topic: str) -> List[dict]:
+    """The chunks on or near the pages of the top results for questions on the topic: those
+    near the best result first, then by distance from its page."""
+    top = engine._search(QUESTION_QUERY.format(topic=topic))[:max(engine.top_k, QUESTION_RESULTS)]
+    pages = {}
+    for rank, p in enumerate(top):
+        pages.setdefault(p.content_id, []).append((rank, int(p.page)))
+    near = []
+    for chunk in engine.index.chunks:
+        cid = chunk.get("content_id")
+        if cid not in pages:
+            continue
+        page = int(chunk.get("page", 0))
+        closest = min(((rank, abs(page - pg)) for rank, pg in pages[cid] if abs(page - pg) <= NEAR_PAGES),
+                      default=None)
+        if closest is not None:
+            near.append((closest, chunk))
+    near.sort(key=lambda item: item[0])
+    return [chunk for _, chunk in near]
+
+
 def textbook_questions(engine, topic: str, limit: int = MAX_QUESTIONS) -> List[Tuple[str, str]]:
     """Up to ``limit`` (question, citation) pairs quoted from the pages the topic is on."""
     terms = _content_terms(topic)
-    top = engine._search(topic)[:engine.top_k]
-    pages = {(p.content_id, p.page): p for p in top}
     found: List[Tuple[str, str]] = []
-    for chunk in engine.index.chunks:
+    for chunk in _near_chunks(engine, topic):
         cid, page = chunk.get("content_id"), int(chunk.get("page", 0))
-        near = next((p for (c, pg), p in pages.items() if c == cid and abs(page - pg) <= NEAR_PAGES), None)
-        if near is None:
-            continue
         for m in _QUESTION.finditer(chunk.get("text", "")):
-            question = re.sub(r"\s+", " ", m.group(1)).strip()
+            question = re.sub(r"\s+([?,])", r"\1", re.sub(r"\s+", " ", m.group(1))).strip()
             if (len(question.split()) < 5 or _NEEDS_PAGE.search(question)
                     or not terms & _content_terms(question)
                     or _clean_share(question, engine.vocabulary) < CLEAN_SHARE
-                    or any(question == q for q, _ in found)):
+                    or any(_same(question, q) for q, _ in found)):
                 continue
             citation = f"DIKSHA {cid} · {chunk.get('chapter', '')} · page {page}"
             found.append((question, citation))

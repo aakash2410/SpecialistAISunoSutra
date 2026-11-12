@@ -34,7 +34,9 @@ sys.path.insert(0, os.path.join(_ROOT, "python"))
 
 from ingest.chunk import chunk_documents, dedupe_documents  # noqa: E402
 from ingest.diksha_pull import load_local  # noqa: E402
-from ingest.page_quality import clean_chunks, english_vocabulary  # noqa: E402
+from ingest.page_quality import (  # noqa: E402
+    clean_chunks, drop_non_science_pages, drop_other_classes, english_vocabulary,
+)
 from pocketinfer.specialist.rerank import write_vocabulary  # noqa: E402
 from pocketinfer.models.embed import DEFAULT_MODEL_NAME, RECOMMENDED_MIN_SCORE, Embed  # noqa: E402
 
@@ -51,6 +53,13 @@ def _tally(chunks, key) -> dict:
     return dict(counts.most_common())
 
 
+def _harvest_classes(raw_path: str) -> list:
+    """The classes the harvest asked DIKSHA for, from raw/chapters.json."""
+    with open(raw_path, encoding="utf-8") as f:
+        grades = json.load(f).get("collection", {}).get("gradeLevel") or []
+    return grades if isinstance(grades, list) else [grades]
+
+
 def build(corpus_dir: str, model_name: str, max_words: int, overlap: int):
     raw_path = os.path.join(corpus_dir, "raw", "chapters.json")
     if not os.path.exists(raw_path):
@@ -59,6 +68,16 @@ def build(corpus_dir: str, model_name: str, max_words: int, overlap: int):
     documents, repeats = dedupe_documents(load_local(raw_path))
     if repeats:
         logger.info("Left out %d repeated pages (items tagged with several grades)", repeats)
+    # Pages left out before chunking, so they are never embedded.
+    page_counts: dict = {}
+    classes = _harvest_classes(raw_path)
+    if classes:
+        documents, counts = drop_other_classes(documents, classes)
+        page_counts.update(counts)
+    documents, counts = drop_non_science_pages(documents)
+    page_counts.update(counts)
+    if page_counts:
+        logger.info("Pages left out: %s", page_counts)
     chunks, removed = clean_chunks(chunk_documents(documents, max_words=max_words, overlap=overlap))
     if not chunks:
         raise ValueError("No chunks produced — is raw/chapters.json empty?")
@@ -87,6 +106,7 @@ def build(corpus_dir: str, model_name: str, max_words: int, overlap: int):
         "num_chunks": len(chunks),
         "num_documents": len(documents),
         "removed": {**removed, "repeated pages": repeats} if repeats else removed,
+        "pages_removed": page_counts,
         "num_items": len({c["content_id"] for c in chunks}),
         "licenses": _tally(chunks, "license"),
         "items_by_license": _tally(list({c["content_id"]: c for c in chunks}.values()), "license"),

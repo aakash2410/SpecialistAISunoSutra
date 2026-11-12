@@ -219,6 +219,41 @@ def test_build_writes_metadata_and_a_licence_summary(tmp_path, monkeypatch):
     assert np.load(tmp_path / "index" / "embeddings.npy").shape == (2, 384)
 
 
+SCIENCE_PAGE = ("Plants make their food by photosynthesis. The leaves take in carbon dioxide and water, "
+                "and with the energy of light they make food and give out oxygen.")
+SOCIAL_PAGE = ("The Chola kings ruled a large empire. The emperor built temples, and inscriptions on the "
+               "temple walls tell us about the trade, the taxes and the administration of the kingdom.")
+
+
+def test_a_book_of_science_and_social_science_keeps_only_its_science_pages():
+    from ingest.page_quality import drop_non_science_pages
+
+    book = {"content_id": "tn", "subject": ["Science", "Social Science"]}
+    docs = [{**book, "page": p, "text": SCIENCE_PAGE if p < 4 else SOCIAL_PAGE} for p in range(1, 8)]
+    docs.append({"content_id": "ncert", "subject": ["Science"], "page": 1, "text": SOCIAL_PAGE})
+    kept, counts = drop_non_science_pages(docs)
+    assert [(d["content_id"], d["page"]) for d in kept] == [("tn", 1), ("tn", 2), ("tn", 3), ("ncert", 1)]
+    assert counts == {"dropped: not science (mixed-subject book)": 4}
+
+
+def test_books_for_other_classes_are_left_out():
+    from ingest.page_quality import drop_other_classes
+
+    docs = [{"content_id": "a", "grade": ["Class 6"]}, {"content_id": "b", "grade": ["Class 6", "Class 7", "Class 8"]},
+            {"content_id": "c", "grade": ["Class 6", "Class 9", "Class 10"]}, {"content_id": "d"}]
+    kept, counts = drop_other_classes(docs, ["Class 6", "Class 7", "Class 8"])
+    assert [d["content_id"] for d in kept] == ["a", "b", "d"]
+    assert counts == {"dropped: book for other classes": 1}
+
+
+def test_encyclopaedia_copies_are_left_out_of_the_index():
+    from ingest.page_quality import encyclopaedia_copies
+
+    wiki = "Natural gas is a fossil fuel.[3] It is used for heating.[12]"
+    chunks = [{"content_id": "w", "text": wiki}] * 3 + [{"content_id": "t", "text": "See Fig. [2] and table 3."}]
+    assert encyclopaedia_copies(chunks) == {"w"}
+
+
 # --------------------------------------------------- which index the device uses
 def _bake(root, name):
     path = os.path.join(root, name, "index")

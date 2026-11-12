@@ -177,6 +177,24 @@ def test_questions_are_quoted_only_when_they_stand_on_their_own():
     assert found == [("What are the two main products of photosynthesis?", "DIKSHA book · Nutrition · page 6")]
 
 
+def test_numbered_questions_are_found_and_repeats_are_quoted_once():
+    text = ("Exercises (i) Which part of the plant takes in carbon dioxide for photosynthesis? "
+            "ii) Which part of a plant takes in carbon dioxide for photosynthesis ? "
+            "4 How do leaves take in carbon dioxide for photosynthesis?")
+    engine = FakeEngine(chunks=[{"content_id": "book", "page": 5, "chapter": "Nutrition", "text": text}])
+    found = [q for q, _ in lesson_plan.textbook_questions(engine, "photosynthesis")]
+    assert found == ["Which part of the plant takes in carbon dioxide for photosynthesis?",
+                     "How do leaves take in carbon dioxide for photosynthesis?"]
+
+
+def test_questions_come_from_a_search_for_questions_on_the_topic():
+    searched = []
+    engine = FakeEngine()
+    engine._search = lambda request: searched.append(request) or []
+    lesson_plan.textbook_questions(engine, "photosynthesis")
+    assert searched == ["photosynthesis questions"]
+
+
 def test_scan_damage_is_never_quoted():
     chunks = [{"content_id": "book", "page": 5, "chapter": "1",
                "text": "What are the prducts of photosyntheis in leeves?"}]

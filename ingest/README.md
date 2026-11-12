@@ -41,12 +41,24 @@ cd "/Users/aakashsangani/Desktop/Suno-Sutra-SW/Specialist v1" && python3 ingest/
 ## What the steps do
 
 - **`diksha_pull.py`** searches DIKSHA by class, subject and licence, checks each book's licence again before downloading, and keeps one document per readable page. Each page records its classes, subjects, board and licence. Without `--subject` it stops, unless you add `--all-subjects`, because every subject is about 20 GB a class.
-- **`build_index.py`** removes books listed under several classes, drops garbled pages, teacher's books and front matter, splits pages into passages of up to 120 words, and embeds them with e5. `manifest.json` lists the passages per licence, class and subject.
+- **`build_index.py`** keeps one copy of each page of a book listed under several classes. It leaves out books tagged with a class outside the harvest, or with more than 3 classes. In books that bind science with other subjects, such as the Tamil Nadu term books, it keeps only the science pages, judged page by page from the words on them. It drops Wikipedia copies, garbled pages, teacher's books and front matter, splits pages into passages of up to 120 words, and embeds them with e5. `manifest.json` lists the passages per licence, class and subject, and what was left out.
 - **Which index the device uses** is decided in `local/corpus_index.py`: `SPECIALIST_INDEX_DIR` if set, otherwise `diksha_g6_8_science`, then the older `diksha_g7_all`. `make_module.sh` ships only that one index, and the install removes any other index from the device.
 
-## Before switching the device over
+## What the 12 November index holds
 
-The answer thresholds, such as the 0.80 search score, were set on the Class 7 index. Run the tests and the 60-question benchmark on the new index before it replaces `diksha_g7_all`:
+The device uses `diksha_g6_8_science`, at the 0.80 search score. The 11 November build had 54,065 passages. Three filters then took rows out of it without embedding again, and `build_index.py` now applies the same filters, so a rebuild gives the same index:
+
+| Left out | Passages | Why |
+|---|---|---|
+| 63 books tagged with a class outside 6 to 8 | 1,555 | Such as a Class 6 to 10 book on AI in science. It won class searches for every class, and reached the top 3 for 1 of 125 test questions |
+| Pages of 29 mixed-subject books that are not science | 2,785 | Mostly the history, civics, economics and maths pages of the Tamil Nadu term books, judged page by page. One of those books is really a maths book. Pages on earthquakes, rocks and weather stay |
+| 50 Wikipedia copies | 2,787 | Written for adults, and CC BY-SA rather than CC BY. They answered "How does a jet engine work?" and "What is DNA replication?" |
+
+That leaves 46,938 passages from 1,526 books, all CC BY 4.0.
+
+On the 98-question benchmark it answers 21 of 22 science questions and refuses 28 of 30 off-topic ones. Maths, social studies and English are mostly refused, since the index is science only. "What is machine learning?" is answered from a Class 6 textbook that defines it.
+
+To check again after a rebuild:
 
 ```bash
 cd "/Users/aakashsangani/Desktop/Suno-Sutra-SW/Specialist v1" && python3 -W ignore tests/benchmark/answer_models.py qwen2.5:1.5b

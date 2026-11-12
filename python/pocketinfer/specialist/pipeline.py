@@ -12,7 +12,8 @@ embed -> retrieve -> ground -> LLM -> MT, lives here.
         -> LLM (grounded; may also refuse)
         -> Verifier (keep only sentences an approved passage supports)
         -> for an explanation, one example from village life, written in a second call
-           and checked under its own rule (see _example)
+           and checked under its own rule (see _example), built from the teacher's own
+           everyday examples when a file of them is installed (see teacher_examples.py)
         -> if that refused, one more try on re-ranked passages (see rerank.rescue)
         -> MT into target language
     => AnswerResult (text + citations + timings [+ audio if a TTS client is given])
@@ -39,6 +40,7 @@ from .grounding import (
     EXAMPLE_INTENTS,
     EXAMPLE_SYSTEM,
     EVERYDAY_WORDS,
+    TEACHER_EXAMPLE_SYSTEM,
     _content_terms,
     REFUSAL_TEXT,
     build_grounding,
@@ -46,12 +48,14 @@ from .grounding import (
     clean_answer,
     example_prompt,
     is_example,
+    teacher_example_prompt,
     is_refusal_response,
     iter_sentences,
 )
 from .answer_guard import QUESTION_SIMILARITY, contradicts, unseen_name, wrong_number
 from .rerank import CANDIDATES, load_vocabulary, rescue
 from .safety import SafetyCheck, load_safety_model
+from .teacher_examples import load_cached, pick
 from .vector_index import Retrieved, VectorIndex
 
 logger = logging.getLogger(__name__)
@@ -77,6 +81,26 @@ EXAMPLE_ILLUSTRATES = 0.5
 # hand pump "powered by sunlight", a wind-driven "electromagnet"), and 12 of 13 sound ones
 # used 6 or fewer, on 19 examples from the 60-question benchmark (11 November).
 EXAMPLE_NEW_WORDS = 6
+# An example built from a teacher's line must say what happens in it. Comparisons, and claims
+# that the line "applies" or "demonstrates" a fact, were the ones that passed the check with a
+# wrong fact (11 November): "pulling a bucket up from the well requires energy, just like
+# plants need oxygen to produce energy through photosynthesis", and "putting wet clothes on a
+# line to dry is a practical application of the fact that water is essential for ... digestion".
+_COMPARISON = re.compile(r"\b(?:just like|is like|are like|like how|similar to|the same way|application of"
+                         r"|demonstrat\w*|illustrat\w*|is an example of)\b", re.IGNORECASE)
+_NONE = re.compile(r"^\W*none\b", re.IGNORECASE)
+
+
+def _with_lead(reply: str) -> str:
+    """A teacher example often comes back as a plain sentence about the teacher's line, as in
+    "A steel ladle left in hot kheer gets hot because heat moves from the hot kheer to the
+    steel ladle", so it gets the "For example," the check looks for. NONE stays as it is."""
+    text = clean_answer(reply or "")
+    if not text or is_example(text) or _NONE.match(text) or is_refusal_response(text):
+        return reply
+    return "For example, " + text[0].lower() + text[1:]
+
+
 _EXAMPLE_LEAD = re.compile(r"^\W*(for example|for instance|e\.g\.)\W*", re.IGNORECASE)
 _LIVE_REASON = "Asks for live information, which textbooks cannot give."
 
@@ -146,6 +170,7 @@ class SpecialistEngine:
         min_score: Optional[float] = None,
         verifier: Optional[Verifier] = None,
         safety_model: Optional[Verifier] = None,
+        teacher_examples: Optional[str] = None,
     ):
         self.index = VectorIndex(index_dir)
         self.vocabulary = load_vocabulary(index_dir)
@@ -153,6 +178,7 @@ class SpecialistEngine:
         self.safety = SafetyCheck(safety_model or load_safety_model())
         self.embedder = embedder or Embed(model_name=self.index.embedder_name or DEFAULT_MODEL_NAME)
         self._check_embedder_matches_index()
+        self.use_teacher_examples(teacher_examples)
         self.llm = llm or extractive_llm  # extractive fallback keeps it offline+runnable
         self.stream_llm = stream_llm      # optional; else stream_answer pseudo-streams
         self.mt = mt
@@ -182,6 +208,25 @@ class SpecialistEngine:
         """
         return self._ground(request, self._search(request)[:self.top_k])
 
+    def use_teacher_examples(self, path: Optional[str] = None):
+        """Load the teacher's everyday examples (see teacher_examples.py) from path, or the
+        default place. The checked lines and their vectors are cached (teacher_examples.load_cached).
+        With none, examples come from the village prompt alone, as before."""
+        loaded = load_cached(lambda lines: self.embedder.embed(lines, kind="passage"),
+                             getattr(self.embedder, "model_name", None) or type(self.embedder).__name__, path,
+                             flagged=self.safety.check_line)
+        self.teacher_examples, self._teacher_vectors = loaded.lines, loaded.vectors
+        # The teacher's words and names are the children's own experience, so an example may
+        # use them freely.
+        self._everyday_words = EVERYDAY_WORDS | _content_terms(" ".join(self.teacher_examples))
+        self._teacher_names = loaded.names
+
+    def _teacher_picks(self, request: str, kept: List[str]) -> List[str]:
+        if not self.teacher_examples:
+            return []
+        query = self.embedder.embed_one(" ".join([request, *kept]), kind="query")
+        return pick(query, self._teacher_vectors, self.teacher_examples)
+
     def _supporting_passage(self, request: str, sentence: str, passages: List[Retrieved], first: bool):
         """The passage behind a sentence, or None if the sentence should be dropped.
 
@@ -202,9 +247,18 @@ class SpecialistEngine:
         """One example from village life for an explanation, as (sentence, passage), or None.
 
         The answer model writes it in a second, separate call, from the sentences that
-        passed the check. It is the model's own, so no passage supports it word for word,
-        and it has its own check. It is kept only if it adds no number or name, flips no
-        fact, brings in little new content (EXAMPLE_NEW_WORDS), is close to the question, passes the safety check, and is a case of one of
+        passed the check. If the teacher has installed a file of everyday examples, the
+        model is first shown the few closest to the topic (teacher_examples.MARGIN) and
+        asked to turn one into an example. If it says none fits, writes a comparison rather
+        than a case, or what it writes fails the check, the village prompt is tried, so a
+        teacher's file never leaves a class with fewer examples than before. That costs one
+        more short call, only when the teacher's lines did not give an example.
+
+        The example is the model's own, so no passage supports it word for word, and it has
+        its own check. It is kept only if it adds no number, adds no name other than one the
+        teacher wrote in their lines (such as Holi or the haat's village), flips no fact, brings in
+        little new content (EXAMPLE_NEW_WORDS, where the teacher's words count as everyday
+        ones), is close to the question, passes the safety check, and is a case of one of
         the kept sentences (it entails that sentence) without the passage behind that
         sentence contradicting it. It is cited to that passage.
 
@@ -216,20 +270,46 @@ class SpecialistEngine:
             return None
         if any(is_example(k) for k in kept):   # the passages already gave one
             return None
-        try:
-            reply = self.llm(EXAMPLE_SYSTEM, example_prompt(request, kept))
-        except Exception as e:  # noqa: BLE001
-            logger.warning("example failed (%s)", e)
-            return None
+        prompts = []
+        picked = self._teacher_picks(request, kept)
+        if picked:
+            prompts.append((TEACHER_EXAMPLE_SYSTEM, teacher_example_prompt(request, kept, picked)))
+        prompts.append((EXAMPLE_SYSTEM, example_prompt(request, kept)))
+        for system, user in prompts:
+            try:
+                reply = self.llm(system, user)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("example failed (%s)", e)
+                return None
+            if system is TEACHER_EXAMPLE_SYSTEM:
+                if _COMPARISON.search(reply or ""):
+                    logger.info("Dropped a teacher example that only compares: %s", reply)
+                    continue
+                reply = _with_lead(reply)
+            found = self._checked_example(reply, request, kept, sources, passages)
+            if found is not None:
+                return found
+            if system is TEACHER_EXAMPLE_SYSTEM:
+                logger.info("No teacher example fitted (%s), asking for a village one", (reply or "").strip()[:200])
+        return None
+
+    def _new_content(self, sentence: str, known: str):
+        """Words of an example that are not in the known text, everyday village words or the teacher's."""
+        return _content_terms(sentence) - _content_terms(known) - self._everyday_words
+
+    def _checked_example(self, reply: str, request: str, kept: List[str], sources: List[Retrieved],
+                         passages: List[Retrieved]):
         sentence = next(iter_sentences([clean_answer(reply or "")]), "")
         if not is_example(sentence) or is_refusal_response(sentence):
             return None
         texts = [p.text for p in passages]
         joined = " ".join(texts)
-        if wrong_number(sentence, joined) or unseen_name(sentence, joined) or contradicts(sentence, texts):
+        names = getattr(self, "_teacher_names", ())
+        if (wrong_number(sentence, joined) or unseen_name(sentence, joined, names)
+                or contradicts(sentence, texts, names)):
             logger.info("Dropped an example that adds or flips a fact: %s", sentence)
             return None
-        new = _content_terms(sentence) - _content_terms(" ".join([request, *kept, joined])) - EVERYDAY_WORDS
+        new = self._new_content(sentence, " ".join([request, *kept, joined]))
         if len(new) > EXAMPLE_NEW_WORDS:
             logger.info("Dropped an example that brings in too much new content %s: %s", sorted(new), sentence)
             return None
@@ -247,15 +327,19 @@ class SpecialistEngine:
         logger.info("Dropped an example that shows none of the facts: %s", sentence)
         return None
 
-    def _search(self, request: str, grade=None) -> List[Retrieved]:
+    def _search(self, request: str, grade=None, own_first: bool = True) -> List[Retrieved]:
         """The top candidates in search order: the first top_k are the plain result,
         and the rest are kept for a rescue. With ``grade`` (a class, such as 6), only
-        that class's passages, unless none of them would pass the retrieval gate."""
+        that class's passages, unless none of them would pass the retrieval gate, and
+        books for that class alone first unless ``own_first`` is False."""
         qvec = self.embedder.embed_one(request, kind="query")
         if grade is None:
             return self.index.search(qvec, top_k=max(CANDIDATES, self.top_k))
         gate = DEFAULT_MIN_SCORE if self.min_score is None else self.min_score
-        return self.index.search(qvec, top_k=max(CANDIDATES, self.top_k), grade=grade, min_score=gate)
+        extra = {} if own_first else {"own_first": False}
+        return self.index.search(qvec, top_k=max(CANDIDATES, self.top_k), grade=grade, min_score=gate,
+                                 accept=lambda found: not self._ground(request, found[:self.top_k]).refused,
+                                 **extra)
 
     def _ground(self, request: str, passages: List[Retrieved]):
         kwargs = {} if self.min_score is None else {"min_score": self.min_score}
@@ -369,6 +453,14 @@ class SpecialistEngine:
             if retry is not None:
                 logger.info("Retrying on re-ranked passages after: %s", reason)
                 reason = yield from _attempt(retry)
+        if reason is not None and grade is not None:
+            # The class's own books passed the gate but gave no answer, as "nutrition in
+            # plants" did for class 6. Books it shares with other classes get one try.
+            wider = self._search(request, grade, own_first=False)[:self.top_k]
+            if [(p.content_id, p.page, p.text) for p in wider] != [
+                    (p.content_id, p.page, p.text) for p in candidates[:self.top_k]]:
+                logger.info("Retrying with books shared with other classes after: %s", reason)
+                reason = yield from _attempt(wider)
         if reason is not None:
             yield _refusal(reason)
 

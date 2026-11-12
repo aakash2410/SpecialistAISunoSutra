@@ -54,6 +54,32 @@ def example_prompt(request: str, facts: List[str]) -> str:
     return f"Question: {request}\n\nFacts:\n{listed}\n\nOne example, in one sentence:"
 
 
+# When the class's teacher has written down everyday things the children know (see
+# teacher_examples.py), the model is shown the few closest to the topic and asked to turn
+# the best one into an example. "NONE" is not an example, so the generic prompt above is
+# tried next.
+# Asked to pick the best fit, the model forced one: "the soap is an acid", "drying red
+# chillies is a practical application of photosynthesis". Told to use one only if it really
+# is a case of a fact, it dropped both and kept "after the first rain, seeds swell up by
+# absorbing water" (8 explanations, 11 November). "Is like" comparisons were nonsense, such
+# as pulling a bucket from a well being like a plant taking in oxygen.
+TEACHER_EXAMPLE_SYSTEM = (
+    "You give one short example to help students in a village school in India picture a fact. "
+    "Their teacher has listed things the children see and do every day. Use one of them only if "
+    "it really is a case of one of the facts. Say what really happens in it, not what it is like, "
+    "and never say anything about it that the facts do not say. Do not add any new fact, number "
+    "or name. If none of them is truly a case of a fact, reply NONE. Otherwise reply with one "
+    "short sentence, under 20 words, that starts with 'For example,'."
+)
+
+
+def teacher_example_prompt(request: str, facts: List[str], everyday: List[str]) -> str:
+    listed = "\n".join(f"- {f}" for f in facts)
+    known = "\n".join(f"- {e}" for e in everyday)
+    return (f"Question: {request}\n\nFacts:\n{listed}\n\nThe teacher's everyday examples:\n{known}\n\n"
+            "One example, in one sentence:")
+
+
 _EXAMPLE_START = re.compile(r"^\W*(for example|for instance|e\.g\.|imagine|think of|just like|like when)\b",
                             re.IGNORECASE)
 

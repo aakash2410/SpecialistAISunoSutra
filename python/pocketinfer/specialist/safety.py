@@ -277,7 +277,209 @@ class SafetyCheck:
         category = self._nli_category(request)
         return self._flag(category, "nli") if category else None
 
+    def check_line(self, line: str) -> Optional[str]:
+        """The category a teacher's everyday line is skipped for, or None if it may be used.
+
+        Patterns first (check_teacher_line). Then the safety model reads the line as a
+        statement (_LINE_CONCERNS against _LINE_SAFE), and the line is dropped if that reading
+        flags it and either the line has a cue (_LINE_CUES) or the request check also flags it
+        in the form an example takes ("For example, ..."). So the model needs a cue or a second
+        reading of its own to agree. Not for requests: those go through check.
+        """
+        found = check_teacher_line(line)
+        if found:
+            return found
+
+        def best(hypotheses):
+            return max(self.verifier.entailment_margin(line, h) for h in hypotheses)
+        margin = best(_LINE_CONCERNS + _CONCERNS) - best(_LINE_SAFE + _SAFE_LABELS)
+        if margin <= LINE_NLI_MARGIN:
+            return None
+        if _LINE_CUES.search(line) or self.check("For example, " + line[:1].lower() + line[1:]):
+            return "concern"
+        return None
+
     @staticmethod
     def _flag(category: str, source: str) -> SafetyFlag:
         text = RESPONSES[_RESPONSE_FOR[category]]
         return SafetyFlag(category, source, text["en"], text["hi"])
+
+
+# ------------------------------------------------------------ the teacher's own lines
+# A teacher's everyday examples (see teacher_examples.py) get their own, looser check. The
+# NLI above is tuned on a child's requests, and it flagged 9 of 33 harmless lines a teacher
+# might write even in the "For example, ..." form (11 November), among them Holi, gilli danda,
+# milking the buffalo and the weekly haat. The lines come from a trusted adult, so they are
+# checked with patterns (the request patterns above, except the medical ones, and these) and
+# then by the safety model, whose flag needs a cue or the request check to agree
+# (SafetyCheck.check_line). Every example
+# made from a line is still checked in full, by SafetyCheck.check, before a child hears it.
+_LIVING = (r"(?:dogs?|pupp(?:y|ies)|cats?|kittens?|cows?|calf|calves|buffalo(?:es)?|goats?|kids?|sheep|lambs?"
+           r"|bullocks?|ox|oxen|donkeys?|horses?|camels?|pigs?|hens?|chickens?|birds?|parrots?|monkeys?|animals?"
+           r"|frogs?|snakes?|ants?|insects?|bees?|butterfl(?:y|ies)|lizards?|squirrels?|child|children|babies|baby|boys?|girls?|brothers?|sisters?|sons?|daughters?|wife|wives"
+           r"|husbands?|mother|father|students?|friends?|classmates?|neighbours?|man|men|woman|women|people|person"
+           r"|someone|somebody|him|her|them|me|us|myself|yourself|himself|herself|themselves)"
+           # "Burning cow dung cakes" is about the dung, not the cow.
+           r"(?!['\s]+(?:dung|cakes?|milk|ghee|sheds?|pens?|feed|fodder|carts?|bells?|horns?|food|toys?|kites?))")
+_HUMAN = (r"(?:child|children|kids?|babies|baby|boys?|girls?|brothers?|sisters?|sons?|daughters?|wife|wives"
+          r"|students?|friends?|classmates?|him|her|them|me|us)")
+# The object right after a verb: "the stray dog", "his little sister", but not "the ball to the boy".
+_OBJECT = (r"\s+(?:(?:the|a|an|his|her|their|my|your|our|its|that|this|those|these)\s+)?"
+           r"(?:(?!(?:with|to|at|on|in|into|for|from|by|and|of|near|under)\b)[\w'-]+\s+){0,2}?")
+_GROUP = r"(?:girls?|boys?|women|men|ladies|daughters?|sons?|wives|husbands?)"
+
+_LINE_PATTERNS = {
+    "self_harm": r"\b(?:die|dies|dying|died|suicid\w*|overdos\w*|noose)\b|\bdead\s+(?:body|bodies|person|man|woman|child|baby)\b"
+                 r"|\bwant\w*\s+to\s+(?:die|disappear|not\s+live)\b|\bhang\w*\s+(?:from|on)\s+(?:the\s+)?(?:ceiling\s+)?fan\b"
+                 r"|\brope\s+(?:a?round|on)\s+(?:the|his|her|their|your|my)?\s*neck\b"
+                 r"|\b(?:cut|cuts|cutting|slash\w*|scratch\w*)\s+(?:your|my|his|her|their|the)?\s*(?:own\s+)?(?:arms?|wrists?|skin|legs?|thighs?)\b"
+                 r"|\bsleeping\s+(?:tablets?|pills?)\b",
+    "violence": r"\b(?:kill(?!\w*\s+time)\w*|murder\w*|stab\w*|strangl\w*|attack\w*|threaten\w*|kidnap\w*|behead\w*)"
+                r"|\b(?:guns?|pistols?|revolvers?|rifles?|katta|bombs?|explosives?|grenades?|weapons?|swords?|daggers?)\b"
+                r"|\bacid\s+(?:attack|on)\b|\bthrow\w*\s+acid\b|\bset\w*\b.{0,30}\bon\s+fire\b"
+                r"|\bfight\w*\s+with\s+(?:knives|knife|sticks?|lathis?|stones?|swords?|blades?|sickles?|rods?)\b"
+                r"|\b(?:knives|knife|blades?|sickles?|axes?|lathis?|sticks?|rods?)\b.{0,20}\b(?:at|after)" + r"\s+(?:the\s+|a\s+|his\s+|her\s+|their\s+)?" + _LIVING + r"\b"
+                # Animals take food in plenty of everyday lines; people stealing is left out.
+                r"|^(?!.*\b(?:monkeys?|crows?|birds?|cats?|dogs?|rats?|mice|squirrels?|parrots?|goats?|cows?)\b).*\b(?:steal\w*|stole\w*|shoplift\w*|pickpocket\w*)",
+    "cruelty": r"\b(?:beat|beats|beating|beaten|hit|hits|hitting|kick|kicks|kicking|kicked|slap\w*|punch\w*|whip\w*|thrash\w*"
+               r"|tortur\w*|smack\w*|spank\w*|burn|burns|burning|burnt|burned|pelt\w*|scald\w*|starv\w*|hurt\w*|injur\w*"
+               r"|harm\w*|poison\w*|abus\w*|hang|hangs|hanging|hanged|squeez\w*|drown\w*)" + _OBJECT + _LIVING + r"\b"
+               r"|\b(?:hot|burning|boiling)\s+(?:[\w'-]+\s+){0,2}(?:to|on|at|over)\s+(?:the\s+|a\s+|an\s+)?" + _LIVING + r"\b"
+               r"|\b(?:lock\w*|tie|ties|tying|tied|chain\w*|forc\w*|grab\w*|drag\w*)" + _OBJECT + _HUMAN + r"\b"
+               r"|\bthrow\w*\s+(?:stones?|rocks?|bricks?|pebbles?)\s+at\b|\bpull\w*\s+(?:\S+\s+){0,2}(?:tails?|ears?|hair)\b"
+               r"|\b(?:pinch\w*|twist\w*)\b.{0,25}\b(?:ears?|arms?|hair|cheeks?|noses?|skin)\b"
+               r"|\b(?:on\s+purpose|as\s+(?:a\s+)?punishment|as\s+a\s+(?:joke|prank)|for\s+a\s+(?:joke|prank|laugh)|to\s+(?:scare|frighten|hurt|tease))\b"
+               r"|\bfeed\w*\b.{0,20}\bplastic\b|\bspit\w*\s+(?:on|at)\b|\bmock\w*|\bmak\w*\s+fun\s+of\b|\blaugh\w*\s+at\b"
+               r"|\b(?:teas(?:e|es|ed|ing)|bull(?:y|ies|ied|ying)|ragging|eve[\s-]?teas\w*|punish\w*)\b"
+               r"|\bmak\w*\s+(?:the\s+|a\s+)?(?:child|children|kids?|boys?|girls?)\s+(?:to\s+)?(?:work|carry|labou?r)\b|\bchild\s+labou?r\b",
+    "abuse": r"\btouch\w*\b.{0,40}\b(?:girls?|boys?|child|children|kids?|private|body|bodies|nobody|alone|secret)\b"
+             r"|\bsecrets?\b(?!\s+(?:recipe|ingredient|hiding\s+place|garden))|\bbruis\w*"
+             r"|\b(?:nobody|no\s+one)\s+(?:else\s+)?(?:is\s+)?(?:at\s+)?home\b"
+             r"|\bstrangers?\b.{0,40}\b(?:cars?|bikes?|sweets|chocolates?|toffees?|took|take|takes|taking|follow\w*|gave|give|gives"
+             r"|giving|offer\w*|call\w*|touch\w*|alone|home|room)\b"
+             r"|\balone\b.{0,30}\b(?:night|field|forest|house|room|man|uncle|stranger|pond|well|canal|river)\b"
+             r"|\b(?:girls?|child|children|baby|kids?|boys?)\b.{0,30}\balone\b"
+             r"|\boffer\w*\s+(?:the\s+|a\s+)?(?:children|child|kids?|girls?|boys?)\s+(?:money|sweets|toffees?|chocolates?|gifts?|rides?)\b"
+             r"|\b(?:money|sweets|toffees?|chocolates?|gifts?)\b.{0,20}\bto\s+come\b"
+             r"|\b(?:child|early)\s+marriage\b|\bmarried\s+(?:at|off|young)\b|\bmarry\s+(?:off|her|him)\b|\bdowry\b",
+    "adult": r"\bkiss\w*|\bnaked\b|\bnude\w*|\bundress\w*|\bporn\w*|\bsexy?\b|\bsexual\w*|\bbreasts?\b|\bpeep(?:s|ed|ing)?\b"
+             r"|\bdirty\s+(?:videos?|pictures?|photos?|films?|movies?|talk|books?|jokes?|stor(?:y|ies))\b"
+             r"|\bblue\s+(?:films?|movies?)\b|\bprivate\s+(?:parts?|photos?|pictures?|videos?)\b"
+             r"|\b(?:take|takes|taking|took|pull\w*)\s+off\s+(?:his|her|their|your|my|the)\s+(?:shorts|pants|clothes|frock|shirt"
+             r"|dress|underwear|kurta|salwar|chaddi)\b",
+    "drugs": r"\b(?:daru|sharab|alcohol\w*|liquor|beer|wine|whisk(?:e)?y|rum|toddy|tadi|hooch|arrack|feni|bhang|ganja|charas"
+             r"|afeem|opium|heroin|cocaine|drugs?|bidis?|beedis?|cigarettes?|cigars?|hookah|chillum|gutk?ha|gutka|tobacco|khaini"
+             r"|zarda|drunk\w*|intoxicat\w*|sniff\w*|glue|whitener)\b|\bwhite\s+powder\b"
+             # "The smoking chulha" and "smoking out the bees" are everyday.
+             r"|(?<!the )(?<!a )\bsmok(?:ing|es|ed|er|ers)\b(?!\s+(?:out|fish|meat|chill?ies|bees|the\s+bees|neem|mosquito\w*))"
+             r"|\bdrink\w*\s+with\b|\bafter\s+drinking\b",
+    "danger": r"\bplay\w*\s+with\s+(?:a\s+|the\s+|some\s+)?(?:fire|matches|matchsticks?|match\s*box|lighters?|petrol|kerosene"
+              r"|diesel|knives|knife|blades?|razors?|(?:fire)?crackers?|electric\w*|wires?|plugs?|sockets?|acid|medicines?"
+              r"|tablets?|pills?|poison\w*)\b"
+              r"|\bplay\w*\s+(?:on|near|beside|along|across)\s+(?:the\s+)?(?:road|highway|railway|tracks?|rail\s+line|transformer)\b"
+              r"|\b(?:petrol|kerosene|diesel)\b.{0,40}\bfire\b|\bfire\b.{0,40}\b(?:petrol|kerosene|diesel)\b"
+              r"|\b(?:fire|chulha|stove|angithi|coal|charcoal|heater)\b.{0,30}\b(?:closed|shut)\s+(?:room|doors?|windows?)\b"
+              r"|\b(?:breath\w*|inhal\w*)\s+(?:in\s+)?(?:the\s+)?(?:petrol|kerosene|glue|whitener|fumes|gas)\b"
+              r"|\bpour\w*\s+(?:hot|boiling)\s+(?:water|oil)\s+(?:on|over)\b"
+              r"|\b(?:pesticides?|insecticides?|poison\w*|phenyl|bleach)\b.{0,30}\b(?:into|in)\s+(?:the\s+|a\s+|his\s+|her\s+|their\s+)?"
+              r"(?:[\w]+'s\s+)?(?:food|water|tanks?|wells?|sweets?|drinks?|milk|tea|dal|rice|pots?)\b"
+              # Vehicles
+              r"|\b(?:roofs?|top)\s+of\s+(?:the\s+|a\s+)?(?:moving\s+)?(?:tractors?|bus|buses|trains?|trucks?|lorry|lorries|trolleys?|jeeps?)\b"
+              r"|\b(?:tractor|bus|train|truck|lorry|trolley|jeep)\s+roofs?\b"
+              r"|\b(?:hang\w*|cling\w*|jump\w*|stand\w*|rid(?:e|es|ing))\b.{0,30}\b(?:moving|running)\s+(?:bus|train|tractor|truck|lorry|trolley|jeep)\b"
+              r"|\b(?:onto|on|off|from|into)\s+(?:the\s+|a\s+)?moving\b"
+              r"|\b(?:cycl\w*|play\w*|run\w*|cross\w*|walk\w*|rac\w*)\b.{0,30}\b(?:highway|traffic)\b|\bagainst\s+(?:the\s+)?traffic\b"
+              r"|\b(?:rac\w*|run\w*|cycl\w*|cross\w*)\s+(?:across|over|along|on)\s+(?:the\s+)?(?:railway\s+)?(?:tracks?|rail\s+lines?|railway\s+lines?|railway)\b"
+              r"|\bgas\b.{0,30}\bcylinder\b|\bcylinder\b.{0,30}\b(?:gas|leak\w*)\b|\bleak\w*\b.{0,20}\bgas\b"
+              r"|\bwet\s+(?:heater|plug|socket|switch|wire|iron)s?\b|\b(?:heater|socket|plug|switch)\b.{0,30}\bbath\w*"
+              r"|\b(?:edge|rim)\s+of\s+(?:the\s+|an\s+)?(?:open\s+)?(?:well|roof|terrace|cliff|quarry|pit)\b|\bopen\s+(?:well|borewell|drain|manhole)s?\b"
+              r"|\b(?:hang\w*|cling\w*|stand\w*)\s+(?:on|from|at)\s+(?:the\s+)?(?:back|door|footboard|outside|steps?)\s+of\b"
+              r"|\b(?:hang\w*|lean\w*)\s+out\s+of\b|\bwithout\s+(?:a\s+)?helmets?\b|\btriple\s+riding\b|\briding\s+three\b"
+              r"|\b(?:child|children|kids?|boys?|girls?)\s+driv\w*"
+              r"|\b(?:lie|lies|lying|lay|lays|sit\w*|walk\w*|play\w*|stand\w*|sleep\w*)\s+(?:down\s+)?(?:on|along|across)\s+(?:the\s+)?(?:railway\s+)?(?:tracks?|rail\s+lines?|railway\s+lines?)\b"
+              # Electricity
+              r"|\b(?:electric|live|bare|power|high\s+tension)\s+(?:wires?|poles?|lines?|cables?)\b|\btransformers?\b"
+              r"|\bwet\s+hands?\b.{0,30}\b(?:switch\w*|plugs?|sockets?|wires?)\b|\b(?:switch\w*|plugs?|sockets?|wires?)\b.{0,30}\bwet\s+hands?\b"
+              r"|\b(?:pins?|hairpins?|wires?|nails?|fingers?|keys?|spoons?)\b.{0,25}\b(?:plug\s+points?|sockets?|switch\s*boards?)\b"
+              # Heights and holes
+              r"|\bclimb\w*\s+(?:up\s+)?(?:on\s+)?(?:the\s+|an\s+|a\s+)?(?:electric\s+|power\s+|telephone\s+|mobile\s+)?(?:poles?|towers?)\b"
+              r"|\bclimb\w*\b.{0,30}\b(?:water\s+tanks?|tanks?\s+ladder|chimney|scaffold\w*)\b"
+              r"|\b(?:climb\w*|fall\w*|jump\w*|crawl\w*)\s+(?:into|down)\b.{0,25}\b(?:silos?|tanks?|wells?|pits?|bore\s*wells?|drains?|sewers?)\b"
+              r"|\bjump\w*\s+(?:off|from|down\s+from)\s+(?:the\s+|a\s+)?(?:roof|terrace|wall|tree|bridge|train|bus|building|balcony)\b"
+              r"|\bjump\w*\s+(?:across|between|over)\s+(?:the\s+)?(?:roofs?|terraces?|walls?|wells?)\b"
+              # Things that are not food
+              r"|\b(?:eat\w*|ate|swallow\w*|chew\w*|lick\w*|tast(?:e|es|ed|ing)|drink\w*|drank|sip\w*)\s+(?:the\s+|some\s+|a\s+)?(?:[\w'-]+\s+){0,2}?"
+              r"(?:mud|soil|clay|chalk|ash|ashes|coal|soap|dhatura|datura|poison\w*|pesticides?|insecticides?|phenyl|kerosene"
+              r"|petrol|diesel|bleach|acid|urea|fertili[sz]ers?|batter(?:y|ies)|coins?|buttons?|marbles?|tablets?|pills?"
+              r"|medicines?|mushrooms?|berries)\b"
+              r"|\b(?:coins?|buttons?|batter(?:y|ies)|marbles?|beads?|pins?|seeds?|stones?|pebbles?)\b.{0,25}\b(?:mouths?|noses?|ears?)\b"
+              # Fire and water
+              r"|\b(?:(?:fire)?crackers?|(?:bottle\s+)?rockets?)\b.{0,25}\b(?:hands?|pockets?|dogs?|cats?|animals?|tails?|faces?|bottles?|inside)\b"
+              r"|\b(?:hands?|pockets?|tails?)\b.{0,25}\b(?:fire)?crackers?\b|\bburn\w*\s+(?:the\s+)?(?:plastic|tyres?|tires?|rubber|polythene)\b"
+              r"|\b(?:swim\w*|bath\w*|jump\w*|div(?:e|es|ed|ing))\b.{0,40}\b(?:alone|floods?|flooded|deep\s+water|whirlpool|dams?)\b"
+              r"|\bjump\w*\s+(?:in|into|down)\s+(?:the\s+|a\s+)?(?:well|river|canal|dam)\b"
+              r"|\b(?:climb\w*|swim\w*|bath\w*|wander\w*)\b.{0,40}\balone\b",
+    "hate": r"\b(?:castes?|jati|jaati|untouchab\w*|achhut|dalits?|harijans?|savarna|chamars?|bhangis?|chuhras?|katuas?|kafirs?"
+            r"|mlecchas?|neech|hindus?|muslims?|musalmans?|christians?|sikhs?|jains?|buddhists?|parsis?)\b"
+            r"|\b(?:lower|upper|low|high|higher)\s+(?:jat|jaat|caste|castes|class|community|communities)\b"
+            r"|\b" + _GROUP + r"\s+(?:are|is)\s+(?:not|never|always|only|less|more|better|worse|weaker|stronger|smarter"
+            r"|cleverer|cleaner|dirtier|lazy|lazier|stupid|dumb|meant|born|too)\b"
+            r"|\b" + _GROUP + r"\s+(?:should|must|cannot|can't|shouldn't|don't|do\s+not|never|ought)\b"
+            r"|\b(?:dirty|filthy|lazy|stupid|dumb|useless|ugly|dangerous)\s+(?:people|caste|community|tribe|race|folk)\b"
+            r"|\b(?:people|those|they|men|women|communit(?:y|ies)|labourers?|workers?|servants?|maids?|beggars?|villagers|the\s+poor)\b"
+            r".{0,30}\b(?:are|is)\s+(?:all\s+)?(?:\w+\s+and\s+)?(?:thieves|dirty|filthy|lazy|liars?|cheats?|criminals?|stupid|dumb|useless)\b"
+            r"|\bcall\w*\s+(?:\S+\s+){0,4}?(?:ugly|fat|dirty|stupid|dumb|idiot|useless|names?)\b|\b(?:dark|black)[\s-]+skinned\b",
+}
+_LINE_COMPILED = {name: re.compile(p, re.IGNORECASE) for name, p in _LINE_PATTERNS.items()}
+# The request patterns that also hold for a statement. The medical ones are about asking for
+# treatment, and a line about a home remedy is left to the full check on the finished example.
+_REQUEST_PATTERNS_FOR_LINES = ("self_harm", "abuse", "violence", "adult", "hate", "sensitive")
+
+
+def check_teacher_line(line: str) -> Optional[str]:
+    """The patterns part of SafetyCheck.check_line: the category a teacher's line is skipped
+    for, or None. For the teacher's own file only."""
+    for category in _REQUEST_PATTERNS_FOR_LINES:
+        if _COMPILED[category].search(line):
+            return category
+    for category, pattern in _LINE_COMPILED.items():
+        if pattern.search(line):
+            return category
+    return None
+
+
+# The safety model reads a teacher's line as a statement, against these. On its own it flags
+# everyday lines at random: a swing at Teej "is sexual", picking lice "says one group is
+# worse". So its flag counts only with a cue word (_LINE_CUES) or when the request check
+# also flags the line in its "For example, ..." form. On 288 everyday lines and 185 harmful
+# ones (11 November), this kept 269 and blocked 175, where the request check alone kept 170
+# and blocked 164. Most harmful lines were written while the patterns were being made. On
+# the last 25, written after, it blocked 18 and the request check 20, so a teacher's list
+# should still be read before it is installed, and every example is checked in full.
+# Without the second reading it kept 280 and blocked 171, and 14 of the last 25.
+LINE_NLI_MARGIN = 1.0
+_LINE_CONCERNS = [
+    "Someone is being hurt.", "A child is in danger.", "This is dangerous for a child.",
+    "Someone is being hit or beaten.", "An animal is being hurt.", "This is about alcohol, tobacco or drugs.",
+    "This is sexual.", "This insults a group of people.", "Someone wants to die.", "This is about a weapon.",
+    "A child is being abused.", "Someone could get badly injured.",
+]
+_LINE_SAFE = [
+    "This is an everyday chore.", "This is a festival or celebration.", "This is a children's game.",
+    "This is farm work.", "This is about cooking or food.", "This is about nature or animals.",
+    "This is a normal part of village life.",
+]
+# People, bodies, force, and things that can hurt. Broad on purpose: a cue only lets the model
+# decide, and most everyday lines have none.
+_LINE_CUES = re.compile(
+    r"\b(?:him|them|himself|herself|themselves|yourself|myself|uncle|strangers?|teenagers?|gangs?|classmates?|crowd"
+    r"|heads?|necks?|eyes?|faces?|bod(?:y|ies)|bath(?:e|es|ing)|photos?|videos?|phones?|naked|alone|secrets?"
+    r"|push\w*|throw\w*|drop\w*|lock\w*|break\w*|burn\w*|forc\w*|cut\w*|hit\w*|beat\w*|kick\w*|hurt\w*|slap\w*|chok\w*"
+    r"|drown\w*|tie|tied|tying|grab\w*|drag\w*|scar(?:e|ed|ing)|sell\w*|sold|dar(?:e|es|ed|ing)|punish\w*"
+    r"|mak(?:e|es|ing)\s+(?:the\s+|a\s+|his\s+|her\s+)?(?:\w+\s+)?\w+\s+(?:eat|drink|dance|stand|kneel|do|take|touch|undress|work)"
+    r"|poison\w*|petrol|kerosene|diesel|razors?|blades?|knife|knives|sticks?|stones?|bottles?|fire\w*|crackers?|plastic\s+bags?"
+    r"|iron|acid|wires?|wells?|bridges?|roofs?|stairs|terrace|motorcycles?|motorbikes?|bikes?|rac(?:e|es|ing)|speed\w*"
+    r"|under\s*water|pills?|tablets?|medicines?|smok\w*|drink\w*|drunk\w*|blood|bleed\w*|wounds?|bruis\w*|pain\w*|cry\w*|tears?"
+    r"|ropes?|hang\w*|pour\w*|squeez\w*|boiling|pesticides?|insecticides?|phenyl|bleach|heavy|moving|trains?|inside|closed)\b",
+    re.IGNORECASE,
+)

@@ -168,6 +168,78 @@ def test_a_sentence_about_what_goes_in_cannot_say_what_comes_out(sentence, answe
     assert quiz._wrong_side(Q1, quiz._answer_terms(Q1, answer), sentence) == wrong
 
 
+@pytest.mark.parametrize("said, digits", [
+    ("22nd March", "22 March"), ("twenty second March", "22 March"), ("On March twenty-two", "On March 22"),
+    ("thirty seven degree celsius", "37 degree celsius"), ("It is 37°C.", "It is 37 degrees Celsius."),
+])
+def test_numbers_are_compared_as_digits(said, digits):
+    assert quiz._digits(said) == digits
+
+
+@pytest.mark.parametrize("answer, sentence", [
+    ("new substances", "A new substance is formed."), ("haemoglobin", "Blood has hemoglobin."),
+    ("It is reflected", "This is called reflection of light."), ("It carries oxygen", "Blood carry oxygen."),
+])
+def test_words_match_in_any_form(answer, sentence):
+    question = "What happens?"
+    new = quiz._answer_terms(question, answer)
+    assert new and quiz._named(new, quiz._terms(sentence)) == new
+
+
+def test_an_answer_with_a_number_needs_that_number():
+    engine = FakeEngine()
+    engine._search = lambda query: [SimpleNamespace(text="World Water Day is celebrated on 22 March every year.")]
+    question = "When is World Water Day celebrated?"
+    for answer in ("22nd March", "twenty second March", "On March 22"):
+        assert quiz.judge(engine, question, answer), answer
+    assert not quiz.judge(engine, question, "22 April")
+    assert not quiz.judge(engine, question, "23rd March")
+
+
+def test_every_part_of_a_list_answer_must_be_named():
+    engine = FakeEngine()
+    engine.verifier = SimpleNamespace(support_score=lambda premise, claim: 1.0)   # agrees with anything
+    engine._search = lambda query: [SimpleNamespace(text=(
+        "Because it provides food and oxygen, which are necessary for life. "
+        "The xylem carries water from the roots. The phloem carries food from the leaves."))]
+    assert not quiz.judge(engine, Q1, "Oxygen and nitrogen")
+    assert quiz.judge(engine, Q1, "Food and oxygen")
+    # Parts may be named in different sentences.
+    assert quiz.judge(engine, "What kind of transport system is present in plants?", "Xylem and phloem")
+
+
+ROOTS_Q = "Which part of the plant absorbs water and minerals from the soil?"
+
+
+class AnswersEngine(FakeEngine):
+    """Passages too badly scanned to judge from, and a clean checked answer."""
+
+    def _search(self, query):
+        return [SimpleNamespace(text="through the roots and transport it (0 the from the root to the leave plant.")]
+
+    def stream_answer(self, request, target_language="en"):
+        self.asked.append(request)
+        yield SentenceResult(0, "The roots of plants absorb water and minerals from the soil.", "")
+        yield SentenceResult(1, "Root hair increases the surface area for absorption.", "")
+
+
+def test_a_short_right_answer_can_be_judged_on_the_devices_own_answer():
+    engine, session = AnswersEngine(), Session()
+    session.quiz = quiz.Quiz("transport", (ROOTS_Q, "DIKSHA"), [])
+    assert not quiz.judge_passages(engine, ROOTS_Q, "The roots.")
+    assert _turn(engine, session, "The roots.") == [quiz.RIGHT, quiz.LAST.format(topic="transport")]
+    assert engine.asked == [ROOTS_Q]
+
+
+def test_a_wrong_answer_hears_the_devices_answer_made_once():
+    engine, session = AnswersEngine(), Session()
+    session.quiz = quiz.Quiz("transport", (ROOTS_Q, "DIKSHA"), [])
+    assert _turn(engine, session, "The leaves.") == [
+        quiz.NOT_QUITE, "The roots of plants absorb water and minerals from the soil.",
+        "Root hair increases the surface area for absorption.", quiz.LAST.format(topic="transport")]
+    assert engine.asked == [ROOTS_Q]
+
+
 def test_no_quiz_without_textbook_questions():
     engine, session = FakeEngine(chunks=[]), Session()
     assert _turn(engine, session, "Start a quiz on black holes") == [quiz.NO_QUESTIONS.format(topic="black holes")]

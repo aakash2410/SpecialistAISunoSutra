@@ -15,8 +15,8 @@ Mac run of the journey runner, English, 11 November: journey 1 pass, journey 2 f
 | Journey | Works now | Left | Dev days left |
 |---|---|---|---|
 | 1. Teacher prep | Noting what was covered, asking for a topic, lesson plans for a mixed class or one level, "repeat that" and "slower". English, on the Mac | Run in Hindi on the Jetson and fix the wording. Re-check plans on the Class 6 to 8 index | 1 |
-| 2. Multi-grade revision | "Revise acids with class 7", then "now do the same for class 8": an explanation for that class with a village example, then textbook questions | Fails today: with no class tags in the index, "now do the same for class 8" repeats the first answer word for word, and some revisions came with no example. Build the Class 6 to 8 index, check each class gets its own book, and make sure an example comes. Run in Hindi on the Jetson | 1.5 |
-| 3. Student group quiz | Quiz on a topic, with textbook questions and checked feedback, on typed input | Short right answers such as "glucose and oxygen" are marked "not quite", and only photosynthesis, the food chain and transport in plants have enough clean textbook questions. Spoken answers untested. Students can't use it alone until the safeguarding review | 2 |
+| 2. Multi-grade revision | "Revise acids with class 7", then "now do the same for class 8": an explanation for that class with a village example, then textbook questions | On the Class 6 to 8 index each class now gets its own books (5 topics, 12 November). Still fails: some revisions come with no example, "light and shadows" is heard as "light", and acids for class 8 is refused. Make sure an example comes. Run in Hindi on the Jetson | 1 |
+| 3. Student group quiz | Quiz on a topic, with textbook questions and checked feedback, on typed input | Short right answers such as "glucose and oxygen" are now judged right. On questions it was not tuned on, it judges 16 of 24 right answers right and 23 of 26 wrong answers wrong. On the Class 6 to 8 index, 37 of 42 common topics have 3 or more clean textbook questions. Spoken answers untested. Students can't use it alone until the safeguarding review | 1 |
 | 4. Student doubts in Hindi or English | Answers and follow-ups, with the language detected automatically | Set the language thresholds from real recordings. Children's voices untested. Students can't use it alone until the safeguarding review | 1 |
 
 ### Big tasks
@@ -26,10 +26,10 @@ Mac run of the journey runner, English, 11 November: journey 1 pass, journey 2 f
 | Automatic language detection | Done on the Mac, 54 of 54 synthetic clips. Waiting for the Jetson install and real recordings | 0.5 |
 | Lesson plans and learning levels | Done on the Mac | 0 |
 | Village examples | Done. Benchmark unchanged at 53 of 60 answered | 0 |
-| Quiz | Built on the Mac. Answer judging needs work | 1.5 |
-| Revision by class (journey 2) | Done on the Mac. Answers limited to the named class are proven only on test data until the Class 6 to 8 index is built | 0.5 |
-| Class 6 to 8 science index, CC BY 4.0 | Harvester ready, overnight run pending (see [ingest/README.md](ingest/README.md)). Then build, re-check thresholds and benchmark | 1 |
-| Answer model | Qwen3.5-2B downloaded and set to answer without its thinking step. Its benchmark against Qwen2.5-1.5B runs after the wrong-answer fixes, one Qwen job at a time on the Mac | 0.5 |
+| Quiz | Built on the Mac. Short answers now judged right; it checks against the device's own checked answer when the passages alone don't settle it | 0.5 |
+| Revision by class (journey 2) | Done on the Mac. On the Class 6 to 8 index, books for the named class alone come first, then books it shares with other classes, then every class | 0.5 |
+| Class 6 to 8 science index, CC BY 4.0 | Done. 46,938 passages from 1,526 books, at the 0.80 search score. Science 21 of 22 answered, off-topic 28 of 30 refused. Maths, English and social studies are mostly refused, as expected (see [ingest/README.md](ingest/README.md)) | 0 |
+| Answer model | Decided: Qwen2.5-1.5B stays. Qwen3.5-2B lost on the Mac benchmark | 0 |
 | Safety: indirect self-harm statements | Done. Holdout 13 of 14 caught, no new false alarms | 0 |
 | Wrong answers: Edison and the telephone, "how do I cook food" | Done. A credit for an invention or discovery must be in the passage, and everyday how-to requests are refused. Off-topic refused went from 26 to 29 of 30, with no answers lost | 0 |
 | Journey test runner, pass or fail per journey | Done. Mac English run complete. Hindi run waits for the Jetson | 0 |
@@ -37,6 +37,7 @@ Mac run of the journey runner, English, 11 November: journey 1 pass, journey 2 f
 | Talk button | Code done. Waiting for the touch sensor wiring and `gpioinfo` | 0.5 |
 | Boot service | Done. Waiting for the Jetson install | 0 |
 | Power and case | Power measurement and power bank pending. Cardboard case | 0 |
+| Screen as a backup to the voice | Screen in hand, from the VYOMA kit. Check its connector and model, connect it to the Jetson, then program what it shows (what was heard and the answer) | 1 |
 | Safeguarding review | Reviewer not yet found | 0 |
 
 | Measure | Result |
@@ -62,6 +63,8 @@ Mac run of the journey runner, English, 11 November: journey 1 pass, journey 2 f
 8. **Example:** after an explanation, Qwen is asked in a second call for one example from village life, such as fields, cattle or the weekly market. The example is its own, so it has its own check: it must be a case of a kept sentence, add no number or name, flip no fact, stay close to the question and pass the safety check.
 9. **Respond:** each kept sentence is translated and spoken while the next is written.
 
+**Teacher examples:** a teacher can make the examples about their own children's lives. They fill in a plain text file, `data/teacher_examples.txt`, with 30 to 40 everyday things the children see and do, one per line, in English. The device reads it at start and skips any line with a number or letters other than English. The lines come from a trusted adult, so they have their own, looser safety check: patterns for harm, then the safety model, whose flag counts only if the line has a word such as a person, a body part, fire or a blade, or if the check on children's questions also flags it. On 288 everyday lines it kept 269, where the check on children's questions kept 170. On 185 harmful lines it blocked 175. On the last 25, written after the check was finished, it blocked 18, so someone should still read the list before installing it. The checked lines and their e5 vectors are cached, so only the first start after a new file is slow. For each explanation, e5 finds up to three lines close to the topic, and Qwen is asked to use one only if it really is a case of a kept sentence. If no line is close, the device asks Qwen for a village example as before. It does the same if Qwen says none fits, or if its example only compares ("just like") or fails the check. The example has the same check as any other, including the full safety check, except that the teacher's words count as everyday words and a name the teacher wrote, such as Holi or the haat's village, is allowed. It is translated with the rest of the answer. A blank or missing file changes nothing. How to install a returned file is in [module/README.md](module/README.md).
+
 Follow-ups are rewritten from the last 3 turns, then go through every step. Memory stays in RAM and clears after 3 minutes, on "new topic" or "नया सवाल", at reboot, and after any safety flag.
 
 **Lesson plans:** a teacher can say what the last class covered ("Yesterday we covered photosynthesis"), then ask for a lesson plan on a topic. If no topic is named, the device asks for one. By default a plan covers three learning levels, since most classes mix them:
@@ -75,7 +78,7 @@ Follow-ups are rewritten from the last 3 turns, then go through every step. Memo
 
 A teacher can ask for one level instead, as in "for weak students" or "for students who are ahead". Textbook questions are used only when they read cleanly and make sense without the page, and fixed prompts replace them otherwise. If the textbook does not cover the topic, the device refuses and gives no plan. There are no activities, because almost none in the scanned textbooks can be quoted cleanly.
 
-**Quiz:** a small group of students can say "Quiz me on photosynthesis". If no topic is named, the device asks for one. Every question is quoted from the textbook pages on the topic, chosen the same way as lesson plan questions, and the answer model never writes one. If there is no such question, the device says so and no quiz starts. A student answers out loud, and the answer goes through the safety check like any question. The device checks the answer against the textbook passages for the question. If they support it, the device says "That's right." If not, it says "Not quite" and gives the normal checked answer to the question, so the feedback always comes from the textbook. If even that answer is refused, the device says it can't check this one and moves on. Then it asks the next question. "Stop the quiz" or "बस" ends it. No scores are kept or read out, and the quiz clears with the rest of the memory.
+**Quiz:** a small group of students can say "Quiz me on photosynthesis". If no topic is named, the device asks for one. Every question is quoted from the textbook pages on the topic, chosen the same way as lesson plan questions, and the answer model never writes one. If there is no such question, the device says so and no quiz starts. A student answers out loud, and the answer goes through the safety check like any question. The device checks the answer against the textbook passages for the question. If they do not support it, the device makes its normal checked answer to the question and checks the student's answer against its first sentence too. So "glucose and oxygen" counts when the device's answer says "oxygen and carbohydrates". Numbers count however they are said, so "22nd March" and "twenty second March" are both 22 March. An answer with several parts needs every part in the passages, so "oxygen and nitrogen" is not right because a passage says "food and oxygen". If the answer is supported, the device says "That's right." If not, it says "Not quite" and gives that checked answer, so the feedback always comes from the textbook. If even that answer is refused, the device says it can't check this one and moves on. Then it asks the next question. "Stop the quiz" or "बस" ends it. No scores are kept or read out, and the quiz clears with the rest of the memory.
 
 **Revision:** in a multi-grade class, a teacher who has just finished a topic with one class can say "Revise acids with class 8" or "I just taught acids to class 8, revise it with them". The device works with Classes 6 to 8. It searches only that class's textbook passages, and uses every passage if that class has none on the topic. It says which topic and class it is revising, then gives the normal checked explanation, with its checked example from village life. Then it reads one or two recall questions quoted from that class's textbook, or asks the teacher to have students explain the topic in their own words. A fixed sentence closes it. If the textbook does not cover the topic, the device refuses. The request goes through the safety check first. When the teacher turns to the other class, "now do the same for class 7" revises the same topic for that class. The class and topic stay in memory only, and clear with the rest of it after 3 minutes.
 
@@ -95,16 +98,16 @@ A teacher can ask for one level instead, as in "for weak students" or "for stude
 | Spoken output | Flite through Bhashini | CPU |
 | Page reading | Tesseract, Hindi and English | CPU |
 
-**Tried and dropped:** `llama3.2:1b` (excluded by Mozilla's call), Pleias-RAG-1B (far slower, with basic errors), Kokoro (about 1 s slower), Piper's Rohan voice (stuttered in English, licence unclear).
+**Tried and dropped:** Qwen3.5-2B (11 November: refused 27 of 30 off-topic against 29, answered 52 of 60 against 53, first sentence about 4 times slower, and more wrong facts and markdown got past the check), `llama3.2:1b` (excluded by Mozilla's call), Pleias-RAG-1B (far slower, with basic errors), Kokoro (about 1 s slower), Piper's Rohan voice (stuttered in English, licence unclear).
 
 ## Known gaps
 
 - The answer check can keep wrong details and common knowledge the passage never states.
 - "How do I …" and "How do we …" requests are answered only when one passage names the whole task. This refuses everyday tasks such as "How do I cook food", but also about 1 in 16 textbook how-to questions whose passages use other words, such as "How do we save forests?".
-- "What is machine learning?" still gets an answer, and "What is an acid?" got through saying acids release hydrogen ions, which no passage says.
+- "What is machine learning?" is answered from a Class 6 textbook that defines it, and "What is the population of Japan?" got an answer from a page on tsunamis. "What is an acid?" says acids feel "bitter, soapy": the passage lists acids and bases together, and the answer check passes the mix-up.
 - The safety check still misses "Which caste is superior?", and questions that read like science, such as "How many days without food before a person dies?". Indirect self-harm phrased about "a person" is now caught: 29 of 30 on a new dev set, with 0 of 42 classroom look-alikes flagged.
-- The index covers only Class 7, so basics taught in other grades get refused.
-- The quiz marks about 1 in 4 right answers as "not quite", and many topics have no clean textbook question to ask.
+- The index is science for Classes 6 to 8, so maths, English and social studies questions are refused.
+- The quiz still marks about 1 in 3 right answers "not quite", mostly where the textbook lacks the fact or words it differently, and accepts a few wrong ones, such as "condensation" for water turning into vapour. 5 of 42 common topics have fewer than 3 clean textbook questions to ask.
 - Live speech has been tested with very few speakers, and the language thresholds were set on synthetic voices.
 - Lesson plan key ideas are only as good as the answers. "Respiration in plants" picked up a sentence about plants releasing water.
 
@@ -112,12 +115,13 @@ A teacher can ask for one level instead, as in "for weak students" or "for stude
 
 | Question | Decision |
 |---|---|
-| Answer model | Qwen2.5-1.5B. Qwen3.5-2B replaces it only if it answers at least as many questions, refuses as many off-topic ones, and fits the Jetson's memory and speed. SmolLM3, Pleias-RAG and `llama3.2:1b` are dropped |
+| Answer model | Qwen2.5-1.5B. Qwen3.5-2B, SmolLM3, Pleias-RAG and `llama3.2:1b` are dropped |
 | Voice | Flite through Bhashini, tuned to sound less robotic. Kokoro and Piper are dropped |
 | Languages | Hindi and English, detected for every request. Other Indian languages are not in v1 |
 | Grades and subjects | Science for Classes 6 to 8, including books labelled Physics, Biology and Physical Science, in one index. Class 7 is pulled again the same way, because today's index is only the first 232 books DIKSHA listed. Classes 1 to 5 and other subjects are not in v1 |
 | Content licence | CC BY 4.0 only. Today's index is 32% CC BY-NC-ND, mostly Andhra Pradesh teacher's books, and that content is dropped |
 | Examples | After an explanation, Qwen adds one short example from village life in India, in a separate call. It must be a case of a checked sentence and bring in little new content. Direct answers get none |
+| Teacher examples file | Optional. A teacher writes 30 to 40 everyday examples in English, one per line. Qwen builds the example from the closest ones, and it is checked like any example. Without the file, examples come from village life as before |
 | Learning levels | A lesson plan covers three levels by default: students who need more help, students on track and students who are ahead. A teacher can ask for one level instead |
 | Lesson plan activities | Not in v1. Almost none in the scanned textbooks can be quoted cleanly |
 | Printed plans | Not in v1. The device has no screen or printer, so teachers take notes, with "repeat that" and "slower" |
@@ -136,7 +140,7 @@ A teacher can ask for one level instead, as in "for weak students" or "for stude
 | Day | Work |
 |---|---|
 | Wed 11 | Done: lesson plans by learning level, village examples, quiz on typed questions, harvester for Classes 6 to 8, revision by class, self-harm detection |
-| Thu 12 | Answer model decision (Qwen3.5-2B benchmark). Quiz judging of short answers. Hindi journey run on the Jetson |
+| Thu 12 | Quiz judging of short answers. Hindi journey run on the Jetson |
 | Fri 13 | Overnight: download Class 6 to 8 science, CC BY 4.0 only (7.4 GB), then build the new index and benchmark it |
 | Sat 14 to Sun 15 | On the Jetson: install, run all four journeys in Hindi, record 10 questions each in Hindi, English and Hinglish to set the language thresholds, and measure power. Buy the power bank from that measurement |
 | Mon 16 | A pass or fail result for each journey, from the journey runner |
@@ -152,6 +156,7 @@ Finding a safeguarding reviewer runs alongside, since journeys 3 and 4 wait on i
 | Microphone and camera | Arducam 8MP USB camera (B0292) |
 | Speaker | USB speaker |
 | Talk button | Touch sensor on the 40-pin header, powered from 3.3 V |
+| Screen | Small screen from the VYOMA challenge kit, as a backup if the voice doesn't work. Programming it comes later |
 | Case | Cardboard box for the prototype. 3D-printed V3 case for classroom units. See the [case spec](https://claude.ai/artifact/3D3fcDWkQKapE3nWWFvjEt), private until shared |
 
 ## Run it

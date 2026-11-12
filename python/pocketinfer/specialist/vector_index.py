@@ -16,6 +16,12 @@ carries. A chunk with no grade matches any class, since older indexes have no gr
 Filtering is used rather than boosting: it is simpler, and a passage from another class
 can never outrank the class the teacher named. If no chunk is tagged with that class, or
 none of its passages scores high enough to answer from, the search uses every passage.
+
+Within a class, books tagged with that class alone come first. Some DIKSHA books are
+tagged with several classes, such as a CBSE "Nutrition" book for Classes 6 to 8, and they
+won "revise nutrition in plants with class 6" and "now do the same for class 8" alike, so
+both classes heard the same page. Shared books are used only when no book of the class's
+own scores high enough, or to fill the list when the class has too few passages.
 """
 
 from __future__ import annotations
@@ -25,7 +31,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional, Union
 
 import numpy as np
 
@@ -83,6 +89,10 @@ def grade_number(value: Union[str, int, None]) -> Optional[int]:
     return int(text) if text.isdigit() else grade_of(text)
 
 
+# The most words taken from the passage before, to complete a passage's first sentence.
+SENTENCE_LEAD = 40
+
+
 @dataclass
 class Retrieved:
     score: float
@@ -111,6 +121,7 @@ class VectorIndex:
             )
         self.dim = int(self.embeddings.shape[1])
         self._grade_rows: Dict[int, Optional[np.ndarray]] = {}
+        self._own_rows: Dict[int, Optional[np.ndarray]] = {}
         logger.info(
             "VectorIndex loaded: %d chunks, dim=%d, embedder=%s",
             len(self.chunks), self.dim, self.manifest.get("embedder"),
@@ -144,25 +155,50 @@ class VectorIndex:
         if n is None:
             return None
         if n not in self._grade_rows:
-            rows, tagged = [], False
+            rows, own, tagged = [], [], False
             for i, c in enumerate(self.chunks):
                 tags = c.get("grade") or []
-                tags = [grade_number(t) for t in (tags if isinstance(tags, (list, tuple)) else [tags])]
+                tags = {grade_number(t) for t in (tags if isinstance(tags, (list, tuple)) else [tags])}
                 if n in tags:
                     rows.append(i)
                     tagged = True
+                    if tags == {n}:
+                        own.append(i)
                 elif not any(tags):
                     rows.append(i)
             usable = tagged and len(rows) < len(self.chunks)
             self._grade_rows[n] = np.asarray(rows, dtype=np.int64) if usable else None
+            # Worth searching first only if it leaves some rows out.
+            self._own_rows[n] = (np.asarray(own, dtype=np.int64)
+                                 if usable and own and len(own) < len(rows) else None)
         return self._grade_rows[n]
 
+    def own_rows_for_grade(self, grade: Union[str, int]) -> Optional[np.ndarray]:
+        """The rows of books tagged with this class and no other, or None if that is no
+        smaller a set than ``rows_for_grade``."""
+        if self.rows_for_grade(grade) is None:
+            return None
+        return self._own_rows[grade_number(grade)]
+
+    @staticmethod
+    def _best(scores: np.ndarray, rows: np.ndarray, top_k: int) -> np.ndarray:
+        k = min(top_k, len(rows))
+        top = rows[np.argpartition(-scores[rows], k - 1)[:k]]
+        return top[np.argsort(-scores[top])]
+
     def search(self, query_vec: np.ndarray, top_k: int = 4, grade: Union[str, int, None] = None,
-               min_score: Optional[float] = None) -> List[Retrieved]:
+               min_score: Optional[float] = None,
+               accept: Optional[Callable[[List[Retrieved]], bool]] = None,
+               own_first: bool = True) -> List[Retrieved]:
         """The top_k passages nearest the query, best first.
 
-        With ``grade``, only that class's passages (see ``rows_for_grade``). If none of them
-        scores ``min_score`` or more, every passage is searched instead, as without a grade.
+        With ``grade``, only that class's passages (see ``rows_for_grade``), and first those
+        from books tagged with that class alone. If the class's own books have no passage
+        that scores ``min_score`` or more, its shared books are searched too, and failing
+        that every passage, as without a grade. Shared passages fill the list if the class's own books
+        have fewer than top_k. ``accept``, if given, must also pass a set of results before
+        it is used: the engine passes its retrieval gate, which also wants a key term.
+        ``own_first=False`` searches all the class's books together.
         """
         if query_vec.shape[0] != self.dim:
             raise ValueError(
@@ -172,13 +208,28 @@ class VectorIndex:
         # Rows are L2-normalized, so dot product == cosine similarity.
         scores = np.asarray(self.embeddings) @ query_vec.astype(np.float32)
         rows = None if grade is None else self.rows_for_grade(grade)
+
+        def usable(top: np.ndarray) -> Optional[List[Retrieved]]:
+            if min_score is not None and float(scores[top[0]]) < min_score:
+                return None
+            results = self._results(scores, top)
+            return results if accept is None or accept(results) else None
+
         if rows is not None:
-            k = min(top_k, len(rows))
-            top = rows[np.argpartition(-scores[rows], k - 1)[:k]]
-            top = top[np.argsort(-scores[top])]
-            if min_score is None or float(scores[top[0]]) >= min_score:
-                return self._results(scores, top)
-            logger.info("No passage for class %s scores %.2f or more, so searching every class", grade, min_score)
+            own = self.own_rows_for_grade(grade) if own_first else None
+            if own is not None:
+                top = self._best(scores, own, top_k)
+                if len(top) < top_k:
+                    shared = np.setdiff1d(rows, own, assume_unique=True)
+                    top = np.concatenate([top, self._best(scores, shared, top_k - len(top))])
+                found = usable(top)
+                if found is not None:
+                    return found
+                logger.info("No book for class %s alone can answer, so using shared books too", grade)
+            found = usable(self._best(scores, rows, top_k))
+            if found is not None:
+                return found
+            logger.info("No passage for class %s can answer, so searching every class", grade)
         k = min(top_k, len(self.chunks))
         top = np.argpartition(-scores, k - 1)[:k]
         top = top[np.argsort(-scores[top])]
@@ -191,7 +242,7 @@ class VectorIndex:
             results.append(
                 Retrieved(
                     score=float(scores[int(i)]),
-                    text=c["text"],
+                    text=self.text_of(int(i)),
                     content_id=c.get("content_id", "unknown"),
                     chapter=c.get("chapter", ""),
                     section=c.get("section", ""),
@@ -200,6 +251,36 @@ class VectorIndex:
                 )
             )
         return results
+
+    def text_of(self, row: int) -> str:
+        """A passage's text, starting where its first sentence starts.
+
+        Passages overlap by a few words, so most start in the middle of a sentence. The
+        start of that sentence is taken from the passage before it on the same page, when
+        it is short. "...called aerobic respiration. If the breakdown occurs without the
+        use of oxygen, the respiration is called anaerobic respiration" lost the words
+        before "called", and the answer to "What is aerobic respiration?" described
+        anaerobic respiration (12 November). Only the text changes: the passage was
+        searched, and is scored, as it was embedded.
+        """
+        c = self.chunks[row]
+        text = c["text"]
+        overlap = int(self.manifest.get("chunk_overlap") or 0)
+        if not overlap or row == 0 or not c.get("chunk_index"):
+            return text
+        prev = self.chunks[row - 1]
+        if (prev.get("content_id"), prev.get("page"), prev.get("chunk_index")) != (
+                c.get("content_id"), c.get("page"), c.get("chunk_index") - 1):
+            return text
+        words, before = text.split(), prev["text"].split()
+        if len(before) <= overlap or before[-overlap:] != words[:overlap]:
+            return text
+        lead = before[:-overlap]
+        ends = [i for i, w in enumerate(lead) if w[-1] in ".?!:"]
+        start = ends[-1] + 1 if ends else 0
+        if not ends or not 0 < len(lead) - start <= SENTENCE_LEAD:
+            return text
+        return " ".join(lead[start:] + words)
 
     @property
     def embedder_name(self) -> Optional[str]:

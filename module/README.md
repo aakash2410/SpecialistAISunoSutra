@@ -1,37 +1,54 @@
 # Installing The Specialist
 
-This role installs the full software pipeline on a Jetson running JetPack 6, and sets up the microphone, speaker and camera. It does not need the upstream Suno Sutra base install, and it leaves the desktop, hostname, kernel and existing packages as they are.
+This role installs the full software pipeline on a Jetson running JetPack 6, and sets up the microphone, speaker and camera. It does not need the upstream Suno Sutra base install, and it leaves the desktop, hostname, kernel and existing packages as they are, unless you turn on the desktop switch below.
+
+It installs only what the device runs. Building indexes, training and exporting models happen on a computer, so PyTorch, Transformers, PyMuPDF, SpeechBrain and the other heavy packages never reach the Specialist's environment.
 
 ## What it installs
 
-| Part | Where |
-|---|---|
-| Answer model, Qwen2.5-1.5B | Ollama |
-| Hindi speech input, translation to and from English, speech output | Bhashini service on `127.0.0.1:11400`, in `/opt/specialist/bhashini_models` |
-| English speech input, Whisper `tiny.en` | `/opt/specialist/models/whisper` |
-| Retrieval, `multilingual-e5-small` | `/opt/specialist/models` |
-| Answer verifier, `nli-deberta-v3-base` | `/opt/specialist/models` |
-| Safety model, `nli-safety-onnx` | `/opt/specialist/models` |
-| Spoken language ID, `lang-id-ecapa-onnx` | `/opt/specialist/models` |
-| Reading pages, Tesseract with Hindi and English | System package |
-| DIKSHA index | `/opt/specialist/corpus` |
-| Pipeline code and Python environment | `/opt/specialist/app`, `/opt/specialist/venv` |
-| Command to run it | `/usr/local/bin/specialist-voice` |
-| Hardware settings | `/etc/default/specialist` |
-| Camera rules | `/etc/udev/rules.d/99-specialist-devices.rules` |
-| Boot check | `specialist-boot-check` service |
-| Voice loop at boot | `specialist-voice` service, started by the talk button |
+Sizes are on disk. Measured from the files the module ships, except where marked as an estimate.
+
+| Part | Where | Size |
+|---|---|---|
+| Answer model, Qwen2.5-1.5B, and no other | Ollama | 986 MB |
+| Hindi speech input, translation to and from English, speech output | Bhashini service on `127.0.0.1:11400`, in `/opt/specialist/bhashini_models` | 1.6 GB download, kept in `/opt/specialist/assets` |
+| English speech input, Whisper `tiny.en` only | `/opt/specialist/models/whisper` | about 75 MB |
+| Retrieval, `multilingual-e5-small`, quantised | `/opt/specialist/models` | 135 MB |
+| Answer verifier, `nli-deberta-v3-base` | `/opt/specialist/models` | 253 MB |
+| Safety model, `nli-safety-onnx` | `/opt/specialist/models` | 181 MB |
+| Spoken language ID, `lang-id-ecapa-onnx` | `/opt/specialist/models` | 86 MB |
+| Reading pages, Tesseract with Hindi and English | System package | |
+| DIKSHA index, the one the voice loop uses | `/opt/specialist/corpus` | 21 MB for `diksha_g7_all` |
+| Teacher examples, blank until a teacher fills it in | `/opt/specialist/teacher_examples.txt` | |
+| Checked teacher examples, made at the first start after a new file | `/opt/specialist/cache` | under 1 MB |
+| Pipeline code and Python environment | `/opt/specialist/app`, `/opt/specialist/venv` | about 300 MB, an estimate |
+| Command to run it | `/usr/local/bin/specialist-voice` | |
+| Hardware settings | `/etc/default/specialist` | |
+| Ollama memory settings | `/etc/systemd/system/ollama.service.d/specialist.conf` | |
+| Camera rules | `/etc/udev/rules.d/99-specialist-devices.rules` | |
+| Boot check | `specialist-boot-check` service | |
+| Voice loop at boot | `specialist-voice` service, started by the talk button | |
+
+The Specialist's Python environment holds six packages and what they bring with them: `numpy`, `requests`, `ollama`, `onnxruntime` (the CPU build), `tokenizers` and `faster-whisper`. The list is in `requirements-specialist.txt`. System packages go in without recommended extras, and pip keeps no download cache.
+
+Each install also removes what earlier installs left behind:
+
+- Any model folder in `/opt/specialist/models` that the code does not load, and any file in a model folder that the module does not ship. The folders in `specialist_models_in_use` are never removed.
+- Whisper models other than `tiny.en`, once `tiny.en` is in place.
+- Any index in `/opt/specialist/corpus` other than the one shipped (`--tags content`).
 
 ## Install
 
-From a computer that can reach the Jetson:
+From the Mac, build the module:
 
 ```bash
-./scripts/make_module.sh
+cd "/Users/aakashsangani/Desktop/Suno-Sutra-SW/Specialist v1" && ./scripts/make_module.sh
 ```
 
+The first time only, make the inventory:
+
 ```bash
-cd dist/specialist-module/ansible && cp inventory.ini.sample inventory.ini
+cd "/Users/aakashsangani/Desktop/Suno-Sutra-SW/Specialist v1/dist/specialist-module/ansible" && cp inventory.ini.sample inventory.ini
 ```
 
 Set your device name and user in `inventory.ini`, then run:
@@ -42,11 +59,13 @@ ansible-playbook -i inventory.ini install_specialist.yml -K
 
 `-K` asks for the device's sudo password. The playbook is safe to re-run, because finished steps get skipped and downloads resume. It ends by asking test questions in English and Hindi, and it fails if the device does not cite a source, refuse an off-topic question or answer in Hindi.
 
-To update only the code after a change, which is the usual case:
+To update only the code after a change, which is the usual case, run this from the Mac:
 
 ```bash
-ansible-playbook -i inventory.ini install_specialist.yml -K --tags app,boot,verify
+cd "/Users/aakashsangani/Desktop/Suno-Sutra-SW/Specialist v1" && ./scripts/make_module.sh && cd dist/specialist-module/ansible && ansible-playbook -i inventory.ini install_specialist.yml -K --tags app,boot,verify
 ```
+
+The first run after the memory settings below came in restarts Ollama and Bhashini once, so it takes a few minutes longer.
 
 ## Settings
 
@@ -63,12 +82,122 @@ Change these in the inventory or with `-e`. The full list is in `ansible/roles/s
 | `specialist_voice_in_lang`, `specialist_voice_out_lang` | The languages of the loop started at boot. `auto`, the default, works out each question's language and answers in it |
 | `specialist_trigger` | The talk button: `key` for any USB keyboard or keypad (Enter), or `gpio` for a touch sensor |
 | `specialist_gpio_chip`, `specialist_gpio_line` | With `gpio`, the chip and line the sensor's signal is wired to |
+| `specialist_ollama_env` | Ollama's memory settings. See [Memory](#memory) |
+| `specialist_malloc_arena_max` | glibc memory arenas for the voice loop and Bhashini, `2` by default. `""` leaves glibc's default |
+| `specialist_headless` | Boot to the text console instead of the desktop. Off by default |
+| `specialist_prune_ollama_models` | Delete every Ollama model except `specialist_llm_model`. Off by default |
 
 To update only the syllabus:
 
 ```bash
 ansible-playbook -i inventory.ini install_specialist.yml -K --tags content
 ```
+
+## Memory
+
+The Jetson Orin Nano shares its 7.4 GB between the CPU and the GPU, and the 6 November tests went as low as 2,766 MB free. The install keeps memory free in these ways, none of which changes an answer:
+
+- **Ollama** gets a settings file, `/etc/systemd/system/ollama.service.d/specialist.conf`. It loads one model at a time and handles one request at a time, which is all the voice loop sends, and it gives the answer model 2048 tokens of context. The longest prompt the pipeline builds is about 1,100 tokens plus 128 to answer, so it fits with room to spare. Ollama's usual 4096 holds about 56 MB more for Qwen2.5-1.5B, and more again for each extra request it runs side by side. If a code change ever makes a prompt too long, Ollama cuts it and the answer changes, so `--tags verify` fails and tells you to raise `OLLAMA_CONTEXT_LENGTH` in `specialist_ollama_env`.
+- **The voice loop and Bhashini** run with `MALLOC_ARENA_MAX=2`, so these two multi-threaded Python processes hold less freed memory. How much this saves varies, so measure it with the commands below.
+- **Models load only when a mode needs them.** Typed questions and page photos never load Whisper or the language ID model.
+
+`--tags verify` ends by printing the memory available with Ollama and Bhashini loaded and the voice loop paused, the boot target, what Ollama has loaded, and which Ollama models are on disk.
+
+### The desktop
+
+A desktop the device boots to holds memory the whole time, about 800 MB on JetPack 6 by NVIDIA's own estimate. The Suno Sutra base install already turns it off. This role leaves it alone unless you ask. On the Jetson, see which one boots:
+
+```bash
+systemctl get-default
+```
+
+`graphical.target` means the desktop starts. To turn it off from the next boot, run this from the Mac:
+
+```bash
+ansible-playbook -i inventory.ini install_specialist.yml -K --tags boot -e specialist_headless=true
+```
+
+Then reboot the Jetson:
+
+```bash
+sudo reboot
+```
+
+Compare the memory free before and after with this command on the Jetson:
+
+```bash
+free -m
+```
+
+To bring the desktop back, run this on the Jetson and then reboot:
+
+```bash
+sudo systemctl set-default graphical.target
+```
+
+### Measure it on the Jetson
+
+Ollama's settings and what it has loaded:
+
+```bash
+systemctl show ollama -p Environment
+```
+
+```bash
+ollama ps
+```
+
+The processes holding the most memory, in MB:
+
+```bash
+ps -eo rss,comm --sort=-rss | head -12 | awk 'NR==1 {print "MB   COMMAND"; next} {printf "%-5d %s\n", $1/1024, $2}'
+```
+
+Memory over time, including the GPU's share:
+
+```bash
+tegrastats --interval 2000
+```
+
+### Free disk space
+
+Other Ollama models, such as the two the Suno Sutra base install pulls, take disk but no memory unless something asks for them. To list them on the Jetson:
+
+```bash
+ollama list
+```
+
+To delete all but the answer model, run this from the Mac. Check first that nothing else on the device uses them:
+
+```bash
+ansible-playbook -i inventory.ini install_specialist.yml -K --tags ollama -e specialist_prune_ollama_models=true
+```
+
+pip's download cache from earlier installs, on the Jetson:
+
+```bash
+du -sh ~/.cache/pip
+```
+
+```bash
+rm -rf ~/.cache/pip
+```
+
+## Teacher examples
+
+After an explanation, the device gives one short example from village life. A teacher can make these examples about things their own children know, with a plain text file of 30 to 40 everyday examples, one per line, in English.
+
+1. Send the teacher `data/teacher_examples.txt` from this repo, printed or on WhatsApp. The notes at the top say what to write.
+2. When it comes back, type or paste the teacher's lines below the notes, one per line, and save it as plain text. Numbering such as "1." is fine. Lines with digits, letters other than English, or anything the check for teachers' lines flags are skipped. That check is looser than the one on children's questions, so that Holi, gilli danda or the weekly haat are not skipped. It still misses some harmful lines, so read the list before installing it.
+3. Install it from the computer that runs the install:
+
+```bash
+ansible-playbook -i inventory.ini install_specialist.yml -K --tags examples -e specialist_teacher_examples=/path/to/teacher_examples.txt
+```
+
+This replaces `/opt/specialist/teacher_examples.txt`, keeps the old one as a backup next to it, and restarts the voice loop so it reads the new file. A normal install or update never overwrites this file. It only puts in the blank template when there is no file yet.
+
+To check which lines the device kept, run `specialist-voice --no-speak --log-level info --text "Explain photosynthesis"`. The log says `Loaded N teacher examples`, and names each skipped line and why. The first start after a new file checks the lines and saves the result in `/opt/specialist/cache`, which takes about 15 seconds for 33 lines on a Mac. Later starts read it from there, and the log says `(cached)`. Changing the file makes the device check it again. A blank or missing file gives the village examples as before.
 
 ## Run it
 
@@ -154,7 +283,7 @@ sudo systemctl disable --now specialist-voice bhashini_models specialist-boot-ch
 ```
 
 ```bash
-sudo rm -rf /opt/specialist /usr/local/bin/specialist-voice /usr/local/bin/specialist-boot-check /usr/local/bin/specialist-usb-power /etc/default/specialist /etc/udev/rules.d/99-specialist-devices.rules /etc/systemd/system/bhashini_models.service /etc/systemd/system/specialist-boot-check.service /etc/systemd/system/specialist-voice.service
+sudo rm -rf /opt/specialist /usr/local/bin/specialist-voice /usr/local/bin/specialist-boot-check /usr/local/bin/specialist-usb-power /etc/default/specialist /etc/udev/rules.d/99-specialist-devices.rules /etc/systemd/system/bhashini_models.service /etc/systemd/system/specialist-boot-check.service /etc/systemd/system/specialist-voice.service /etc/systemd/system/ollama.service.d/specialist.conf
 ```
 
 Ollama and the system packages stay installed.
