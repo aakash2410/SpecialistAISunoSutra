@@ -2,6 +2,21 @@
 
 An offline subject expert for rural classrooms, built on the Suno Sutra platform. A teacher asks a question by voice or from a textbook page. The device answers aloud in Hindi or English, using only approved DIKSHA content, and says so when the content does not cover the question.
 
+## What's new this sprint
+
+The Specialist is an offline voice expert for rural classrooms. A teacher or student asks in Hindi or English, and a small box on the desk answers aloud from approved DIKSHA textbooks, with no internet. This sprint turned a question-answering box into a classroom assistant covering all four journeys Honey mapped out.
+
+- **It works out the language itself.** A small language ID model and Whisper's confidence decide Hindi or English for every question. Nobody sets anything, and the answer comes back in the language you asked in.
+- **Teachers get lesson plans.** Tell it what the class covered yesterday and ask for tomorrow's plan. It gives a recap, the key ideas, a simpler version for students who need more help, a question to check understanding, one to stretch students who are ahead. The questions get quoted from the textbook, never invented.
+- **Students get a quiz.** Questions come straight from the textbook. Every spoken answer gets checked against it, and a wrong answer hears the checked textbook explanation. No scores get kept.
+- **Multi-grade classes get revision by class.** "Revise force with class 6", then "now do the same for class 8", draws on each class's own books.
+- **Examples come from the children's own lives.** After an explanation, the device adds one example from village life. Teachers can hand it their own list of 30 to 40 everyday examples to draw from. Every example gets checked: it must show a textbook fact and add nothing new.
+- **Three classes of science, one open licence.** The index now covers Class 6 to 8 science: 46,938 passages from 1,526 books, all CC BY 4.0. It answers 21 of 22 science questions and refuses 28 of 30 off-topic ones.
+- **Safer and more honest.** It catches indirect self-harm statements, 13 of 14 on the frozen holdout. It refuses "Who invented the telephone?" instead of crediting Edison, and turns away everyday how-to requests the textbook can't answer.
+- **Hands-free and lighter.** It is set up to start at boot, records on a touch sensor or any USB key, repeats or slows its last answer on request, and installs only what the Jetson needs.
+
+We also tested a bigger answer model, Qwen3.5-2B, and kept Qwen2.5-1.5B. The smaller model answered more questions, refused more off-topic ones, and spoke its first sentence about four times faster. Everything above passes on the Mac. The Jetson run is next.
+
 ## Status, 11 November 2026
 
 The full loop runs on a Jetson Orin Nano with the network off, from live Hindi or English speech to a spoken answer. Since the last Jetson install, the device has gained automatic language detection, lesson plans by learning level, village examples, a quiz, revision by class, and better self-harm detection. These are tested on the Mac only so far. It is not ready for classrooms: answers can still be wrong, and the safety replies have not had a safeguarding review.
