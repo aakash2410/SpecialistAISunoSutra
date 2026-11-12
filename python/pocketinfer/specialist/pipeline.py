@@ -8,6 +8,8 @@ embed -> retrieve -> ground -> LLM -> MT, lives here.
         -> Embed.embed_one(query)
         -> refuse questions about live information ("the price of gold today")
         -> VectorIndex.search, keep the best top_k
+        -> a topic word the index has never seen: ask again, offering a textbook word
+           spelt like it ("Did you mean heat conduction?"), instead of answering
         -> build_grounding (refuse if not covered)
         -> LLM (grounded; may also refuse)
         -> Verifier (keep only sentences an approved passage supports)
@@ -37,20 +39,26 @@ from ..models.embed import DEFAULT_MODEL_NAME, Embed
 from ..models.verify import Verifier
 from .grounding import (
     DEFAULT_MIN_SCORE,
+    DID_YOU_MEAN_TEXT,
     EXAMPLE_INTENTS,
     EXAMPLE_SYSTEM,
     EVERYDAY_WORDS,
     TEACHER_EXAMPLE_SYSTEM,
     _content_terms,
     REFUSAL_TEXT,
+    UNCLEAR_TEXT,
     build_grounding,
     classify_intent,
     clean_answer,
+    closest_term,
     example_prompt,
     is_example,
     teacher_example_prompt,
     is_refusal_response,
     iter_sentences,
+    load_index_words,
+    topic_phrase,
+    unknown_words,
 )
 from .answer_guard import QUESTION_SIMILARITY, contradicts, unseen_name, wrong_number
 from .rerank import CANDIDATES, load_vocabulary, rescue
@@ -174,6 +182,7 @@ class SpecialistEngine:
     ):
         self.index = VectorIndex(index_dir)
         self.vocabulary = load_vocabulary(index_dir)
+        self.words = load_index_words(index_dir, [c.get("text", "") for c in self.index.chunks])
         self.verifier = verifier or Verifier()
         self.safety = SafetyCheck(safety_model or load_safety_model())
         self.embedder = embedder or Embed(model_name=self.index.embedder_name or DEFAULT_MODEL_NAME)
@@ -345,6 +354,43 @@ class SpecialistEngine:
         kwargs = {} if self.min_score is None else {"min_score": self.min_score}
         return build_grounding(request, passages, **kwargs)
 
+    def _unclear(self, request: str, candidates: List[Retrieved]):
+        """(word, phrase) when a topic word of the request is nowhere in the index, or None.
+
+        ``phrase`` is the request's topic with the closest textbook word in place of the unknown
+        one ("heat conduction" for "heat endaction"), or None when no word is close (see
+        grounding.closest_term). With no close word, a request the gate would refuse anyway,
+        such as "What is Bitcoin?", is left to the normal refusal. A real word the index has,
+        such as "cricket", is never unknown, so an off-topic question about it is refused as
+        before.
+        """
+        words = getattr(self, "words", None)
+        unknown = unknown_words(request, words) if words else []
+        if not unknown:
+            return None
+        others = _content_terms(request) - _content_terms(" ".join(unknown))
+        for word in unknown:
+            term = closest_term(word, others, self.vocabulary or words,
+                                (c.get("text", "") for c in self.index.chunks), words)
+            if term:
+                return word, topic_phrase(request, word, term)
+        if self._ground(request, candidates[:self.top_k]).refused:
+            return None
+        return unknown[0], None
+
+    def _clarification(self, word: str, phrase: Optional[str], target_language: str):
+        """What to say instead of an answer: (English, spoken text, reason)."""
+        lang = (target_language or "en").lower()
+        texts = DID_YOU_MEAN_TEXT if phrase else UNCLEAR_TEXT
+        english = texts["en"].format(term=phrase)
+        if lang == "hi":
+            term = self._localize_text(phrase, "hi").strip(" ।.?") if phrase else None
+            spoken = texts["hi"].format(term=term or phrase)
+        else:
+            spoken = self._localize_text(english, target_language)
+        reason = f"unclear word: {word!r}" + (f", offered {phrase!r}" if phrase else "")
+        return english, spoken, reason
+
     def stream_answer(self, request: str, target_language: str = "en",
                       grade=None) -> Iterator[SentenceResult]:
         """Yield the answer one sentence at a time (embed -> retrieve -> ground ->
@@ -447,6 +493,14 @@ class SpecialistEngine:
             return None
 
         candidates = self._search(request, grade)
+        unclear = self._unclear(request, candidates)
+        if unclear:
+            english, spoken, reason = self._clarification(*unclear, target_language)
+            _mark("mt")
+            audio = _audio(spoken)
+            _mark("tts")
+            yield SentenceResult(0, english, spoken, audio, refused=True, reason=reason, timings=steps)
+            return
         reason = yield from _attempt(candidates[:self.top_k])
         if reason is not None:
             retry = rescue(request, candidates, self.top_k, self.vocabulary)
@@ -525,6 +579,15 @@ class SpecialistEngine:
         ts = time.time()
         candidates = self._search(request, grade)
         t["retrieve"] = time.time() - ts
+        unclear = self._unclear(request, candidates)
+        if unclear:
+            english, spoken, reason = self._clarification(*unclear, target_language)
+            result = AnswerResult(refused=True, intent=classify_intent(request), request=request,
+                                  target_language=target_language, answer_en=english, answer_localized=spoken,
+                                  reason=reason, passages=candidates[:self.top_k], timings=t)
+            self._maybe_tts(result)
+            t["total"] = time.time() - t0
+            return result
         passages = candidates[:self.top_k]
         g, kept, citations, dropped = self._try_passages(request, passages, t)
         if not kept:

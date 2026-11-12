@@ -12,6 +12,8 @@ Outputs into <corpus>/index/:
     embeddings.npy   float32 (n, dim), L2-normalized
     chunks.jsonl     text + DIKSHA source metadata (grade, subject, board, licence), one per line
     manifest.json    embedder, dim, counts, licence and grade summaries, provenance
+    vocabulary.json  words in 8 books or more, for spotting damaged scans
+    words.json       every word in the index, for spotting a misheard request word
 """
 
 from __future__ import annotations
@@ -37,6 +39,7 @@ from ingest.diksha_pull import load_local  # noqa: E402
 from ingest.page_quality import (  # noqa: E402
     clean_chunks, drop_non_science_pages, drop_other_classes, english_vocabulary,
 )
+from pocketinfer.specialist.grounding import write_index_words  # noqa: E402
 from pocketinfer.specialist.rerank import write_vocabulary  # noqa: E402
 from pocketinfer.models.embed import DEFAULT_MODEL_NAME, RECOMMENDED_MIN_SCORE, Embed  # noqa: E402
 
@@ -98,6 +101,8 @@ def build(corpus_dir: str, model_name: str, max_words: int, overlap: int):
             f.write(json.dumps(c, ensure_ascii=False) + "\n")
     # Search re-ranking uses this to spot damaged scans.
     write_vocabulary(index_dir, english_vocabulary(chunks))
+    # Every word in the index, so a request word it has never seen can be caught.
+    write_index_words(index_dir, texts)
 
     manifest = {
         "embedder": model_name,

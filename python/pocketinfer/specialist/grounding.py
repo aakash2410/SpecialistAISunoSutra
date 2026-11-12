@@ -18,9 +18,12 @@ which shapes the instruction given to the LLM.
 
 from __future__ import annotations
 
+import difflib
+import json
+import os
 import re
 from dataclasses import dataclass, field
-from typing import List, Set
+from typing import Dict, Iterable, List, Optional, Set
 
 from .vector_index import Retrieved
 
@@ -195,6 +198,139 @@ EVERYDAY_WORDS |= _content_terms(
     birds insect insects flower flowers fruit fruits vegetable vegetables salt sugar lemon juice
     example instance like just when imagine"""
 )
+
+
+# A request whose topic word the index has never seen is not answered from its other words.
+# On 12 November speech recognition heard "heat conduction" as "heat endaction", and the device
+# answered from "heat" alone, with lesson aims. Instead it offers a textbook word spelt like it
+# that goes with the request's other words ("Did you mean heat conduction?"). With no such word,
+# it asks the teacher to say it again if the other words would have been answered, and refuses
+# as before if not, so "What is Bitcoin?" is still refused. Every word of 3 letters or more in the index counts as
+# known, so a rare textbook term is never blocked, and only request words of 5 letters or more
+# are checked.
+WORDS_FILE = "words.json"
+# Too few words to call any word unknown: the 10-passage demo slice and test indexes.
+WORDS_MIN_PASSAGES = 1000
+UNKNOWN_MIN_LETTERS = 5
+# How close a word must be to be offered (see closest_term). "endaction" and "conduction" score
+# 0.74. Lengths may differ by 2 letters at most, so "shakes" is never offered for "shakespeare".
+CLOSE_TERM = 0.7
+CLOSE_LENGTH = 2
+# On average, this share of the passages with an offered word must have each of the request's
+# other topic words, and at least 3 must have one. On the Class 6 to 8 index, "heat" is in 66%
+# of the passages with "conduction", 27% with "reaction" and 6% with "education"; "cook" is in
+# 3% of those with "bigiyan", a scan error offered for "biryani".
+MIN_SHARE = 0.35
+MIN_TOGETHER = 3
+# Request words that need be in no textbook: politeness, and Hindi typed in English letters.
+_NOT_TOPIC = set(
+    """hello thanks thank okay kindly sorry actually basically really
+    baare bataiye bataye batayein batao samjhaiye kripya chahiye kijiye karke hamein humein kaise
+    kyunki matlab sakte""".split()
+)
+_LETTERS = re.compile(r"[a-z]+")
+_SUFFIXES = ("es", "s", "ed", "ing", "ly", "er", "est")
+
+# Said instead of an answer. The Hindi is written by hand, as the safety replies are.
+UNCLEAR_TEXT = {
+    "en": "Sorry, I did not catch one of the words, or it is not in the textbooks on this device. "
+          "Please say it again.",
+    "hi": "माफ़ कीजिए, मैं एक शब्द ठीक से समझ नहीं पाया, या वह इस डिवाइस की पाठ्यपुस्तकों में नहीं है। "
+          "कृपया फिर से बोलिए।",
+}
+DID_YOU_MEAN_TEXT = {
+    "en": "Sorry, I did not catch that. Did you mean {term}? Please ask again.",
+    "hi": "माफ़ कीजिए, मैं ठीक से समझ नहीं पाया। क्या आपका मतलब {term} था? कृपया फिर से पूछिए।",
+}
+
+
+def index_words(texts: Iterable[str]) -> Dict[str, int]:
+    """How many passages each word of 3 letters or more is in."""
+    counts: Dict[str, int] = {}
+    for text in texts:
+        for w in set(_LETTERS.findall(text.lower())):
+            if len(w) >= 3:
+                counts[w] = counts.get(w, 0) + 1
+    return counts
+
+
+def write_index_words(index_dir: str, texts: Iterable[str]) -> None:
+    with open(os.path.join(index_dir, WORDS_FILE), "w", encoding="utf-8") as f:
+        json.dump(dict(sorted(index_words(texts).items())), f, separators=(",", ":"))
+
+
+def load_index_words(index_dir: str, texts: List[str]) -> Optional[Dict[str, int]]:
+    """The index's words and their passage counts, from words.json, or worked out from ``texts``
+    for an index built before the file existed. None for a small index, which turns the check off."""
+    if len(texts) < WORDS_MIN_PASSAGES:
+        return None
+    path = os.path.join(index_dir, WORDS_FILE)
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    return index_words(texts)
+
+
+def _is_topic_word(word: str) -> bool:
+    return len(word) >= 3 and word not in _STOPWORDS and word not in _NOT_TOPIC
+
+
+def _known(word: str, words) -> bool:
+    return word in words or any(word.endswith(s) and word[:-len(s)] in words for s in _SUFFIXES)
+
+
+def unknown_words(request: str, words) -> List[str]:
+    """Topic words of the request, 5 letters or more, that are nowhere in the index."""
+    return [w for w in _LETTERS.findall((request or "").lower())
+            if len(w) >= UNKNOWN_MIN_LETTERS and _is_topic_word(w) and not _known(w, words)]
+
+
+def closest_term(word: str, others: Set[str], pool: Iterable[str], texts: Iterable[str],
+                 counts: Dict[str, int]) -> Optional[str]:
+    """The textbook word the teacher most likely said instead of ``word``, or None.
+
+    ``pool`` is the words that may be offered (words in 8 books or more, so a scanning error is
+    never offered), ``others`` the request's other topic words, which say what it is about, and
+    ``counts`` the passages each word is in (load_index_words).
+    Spelling alone picks badly: "reaction" and "education" are closer to "endaction" than
+    "conduction" is, and "smile" is very close to "simile". So a close word is offered only
+    when the passages that have it often have the other words too: two thirds of the passages
+    with "conduction" mention heat, and a quarter of those with "reaction". With no other
+    topic word, nothing is offered.
+    """
+    others = {o for o in others if o not in _NOT_TOPIC}
+    if not others:
+        return None
+    close = [w for w in difflib.get_close_matches(word, list(pool), n=30, cutoff=CLOSE_TERM)
+             if abs(len(w) - len(word)) <= CLOSE_LENGTH and _is_topic_word(w)]
+    if not close:
+        return None
+    hits: dict = {}
+    for text in texts:
+        text = text.lower()
+        found = sum(o in text for o in others)
+        if found:
+            words = set(_LETTERS.findall(text))
+            for w in close:
+                if w in words:
+                    hits[w] = hits.get(w, 0) + found
+    share = {w: n / (counts[w] * len(others)) for w, n in hits.items() if n >= MIN_TOGETHER and counts.get(w)}
+    ratio = lambda w: difflib.SequenceMatcher(None, word, w).ratio()
+    best = max(share, key=lambda w: (share[w], ratio(w)), default=None)
+    return best if best and share[best] >= MIN_SHARE else None
+
+
+def topic_phrase(request: str, word: str, term: str) -> str:
+    """The topic words around ``word`` in the request, with ``term`` in its place, up to 3 words:
+    "tell me about the heat endaction" gives "heat conduction"."""
+    tokens = _LETTERS.findall(request.lower())
+    i = tokens.index(word)
+    start, end = i, i + 1
+    while start > 0 and i - start < 2 and _is_topic_word(tokens[start - 1]):
+        start -= 1
+    while end < len(tokens) and end - start < 3 and _is_topic_word(tokens[end]):
+        end += 1
+    return " ".join(term if j == i else tokens[j] for j in range(start, end))
 
 
 def build_grounding(

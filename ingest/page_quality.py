@@ -12,9 +12,10 @@ rough filter, and anything it misses stays in the corpus.
 
 ``clean_chunks`` runs when the index is built and checks each passage: OCR run over
 Hindi or Gujarati pages, which reads as English letters but says nothing, plus front
-matter anywhere on a page and every passage from a teacher's manual or lesson plan.
-Handbooks that mix teacher instructions with explanations stay. Removing passages with
-teacher instructions in them lost real content and made answers no better.
+matter anywhere on a page, every passage from a teacher's manual or lesson plan file, every
+book whose title marks it as a teacher's handbook, and every passage that states lesson aims.
+Other books that mix teacher instructions with explanations stay: removing every passage with
+a teacher instruction in it lost real content and made answers no better.
 """
 
 from __future__ import annotations
@@ -43,6 +44,35 @@ _HEADER_CHARS = 400
 _DUPLICATE_CHARS = 300
 
 _TEACHER_FILE_RE = re.compile(r"teachh?er|lesson-plan|unit-plan|content-outline|post-course", re.IGNORECASE)
+# Teacher's handbooks, judged from the DIKSHA title (the chunk's "chapter"). The file name
+# rarely says so, as in "7.3_SCI_Heat_THB", whose lesson aims ("Students will also justify
+# why they wear certain kinds of clothes in summer and winter") were read out as an answer on
+# 12 November. THB is Andhra Pradesh's mark for a Teacher's Handbook. In the Class 6 to 8
+# index this matches the AP Science Handbooks for Classes 6 to 8 and 9 THB chapters, all
+# period-by-period teaching notes. "Activity Guide", "Lab Manual", "Teacher Corner" (a
+# textbook) and a "Student Handbook" do not match.
+_TEACHER_TITLE_RE = re.compile(
+    r"(?<![a-z])(?:thb(?![a-z])|hand\s*-?\s*book|teach(?:er|ers|er's|ers')?\s*(?:guide|hand\s*book|manual|book))",
+    re.IGNORECASE,
+)
+# Lesson aims and learning outcomes: "the learners will be able to explain the modes of heat
+# transfer", "The teacher will prepare a list of questions". Textbooks speak to the student as
+# "you", so in the Class 6 to 8 index these phrases are almost only in lesson plans and
+# teacher's handbooks, and 24 of 25 passages sampled with one of them were teaching notes
+# throughout, not only in the aim sentence. The whole passage goes, since cutting sentences out
+# would leave its vector describing text it no longer holds. "Aim:" and "Objective:" are left
+# alone, since textbook activities start with them. The answer check has a wider list
+# (answer_guard.LESSON_AIM) for sentences that still get through.
+_LESSON_AIM_RE = re.compile(
+    r"\b(?:students?|learners?|pupils?|children|child)\s+(?:will|would|shall|should|can)\s+be\s+able\s+to\b"
+    r"|\b(?:students|learners|pupils)\s+(?:will|would)\b"
+    r"|\bchildren\s+(?:will|would)\s+(?:also\s+)?(?:learn|understand|know|explore|recall|discuss|identify|explain|"
+    r"describe|justify|classify|appreciate|develop|be\s+introduced)\b"
+    r"|\bthe\s+teachers?\s+(?:will|would)\b|\bteachers?\s+will\b"
+    r"|\bby\s+the\s+end\s+of\s+(?:this|the)\s+(?:lesson|chapter|unit|period|class|session|topic)\b"
+    r"|\blearning\s+(?:outcomes?|objectives?)\b|\b(?:lesson|teaching|instructional)\s+objectives?\b",
+    re.IGNORECASE,
+)
 _FRONT_MATTER_RE = re.compile(
     r"acknowledge?ments?|textbook (?:review|development)|printed (?:on|in|at)\b|\bG\.?S\.?M\b|pledge"
     r"|jana[- ]gana|jaya jaya|free distribution|all rights reserved|foreword|review workshop",
@@ -223,6 +253,15 @@ def remove_unwanted(docs: List[dict]) -> Tuple[List[dict], dict]:
     return kept, dict(counts)
 
 
+def is_teacher_handbook(chunk: dict) -> bool:
+    title = chunk.get("chapter") or ""
+    return bool(_TEACHER_TITLE_RE.search(title)) and "student" not in title.lower()
+
+
+def states_lesson_aims(text: str) -> bool:
+    return bool(_LESSON_AIM_RE.search(text))
+
+
 def _book(chunk: dict) -> str:
     return (chunk.get("source") or "").rsplit("/", 1)[-1]
 
@@ -284,10 +323,14 @@ def clean_chunks(chunks: List[dict]) -> Tuple[List[dict], dict]:
         text = chunk["text"]
         if _TEACHER_FILE_RE.search(_book(chunk)):
             counts["dropped: teacher's book"] += 1
+        elif is_teacher_handbook(chunk):
+            counts["dropped: teacher's handbook (title)"] += 1
         elif chunk.get("content_id") in copies:
             counts["dropped: encyclopaedia copy"] += 1
         elif _FRONT_MATTER_RE.search(text):
             counts["dropped: front matter"] += 1
+        elif states_lesson_aims(text):
+            counts["dropped: lesson aims"] += 1
         elif check_garble and _is_garbled(text, vocabulary):
             counts["dropped: garbled text"] += 1
         else:

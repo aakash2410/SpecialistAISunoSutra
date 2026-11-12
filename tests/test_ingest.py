@@ -217,6 +217,8 @@ def test_build_writes_metadata_and_a_licence_summary(tmp_path, monkeypatch):
     assert manifest["grades"] == {"Class 6": 1, "Class 7": 1, "Class 8": 1}
     assert chunks[0]["grade"] == ["Class 6", "Class 7"] and chunks[1]["grade"] == ["Class 8"]
     assert np.load(tmp_path / "index" / "embeddings.npy").shape == (2, 384)
+    with open(tmp_path / "index" / "words.json") as f:
+        assert json.load(f)["heat"] == 1
 
 
 SCIENCE_PAGE = ("Plants make their food by photosynthesis. The leaves take in carbon dioxide and water, "
@@ -253,6 +255,38 @@ def test_encyclopaedia_copies_are_left_out_of_the_index():
     chunks = [{"content_id": "w", "text": wiki}] * 3 + [{"content_id": "t", "text": "See Fig. [2] and table 3."}]
     assert encyclopaedia_copies(chunks) == {"w"}
 
+
+
+def test_teachers_handbooks_and_lesson_aims_are_left_out_of_the_index():
+    from ingest.page_quality import clean_chunks, is_teacher_handbook
+
+    fact = "Heat flows from a hotter object to a colder object, and that is how a spoon in hot tea gets hot."
+    aims = ("Objective Given the content (chapter) the learners will be able to explain the different modes "
+            "of heat transfer. Students will be able understand wool keeps us warm in winters.")
+    plan = "Teacher will prepare a list of questions about conduction and will ask them during discussions."
+    book = {"content_id": "a", "source": "x/1.pdf"}
+    chunks = [{**book, "chapter": "4_heat", "text": t} for t in (fact, aims, plan)]
+    chunks.append({**book, "content_id": "b", "chapter": "7.3_SCI_Heat_THB", "text": fact})
+    chunks.append({**book, "content_id": "c", "chapter": "6_Science_ Hand Book", "text": fact})
+    kept, counts = clean_chunks(chunks)
+    assert [(c["content_id"], c["text"]) for c in kept] == [("a", fact)]
+    assert counts == {"dropped: lesson aims": 2, "dropped: teacher's handbook (title)": 2}
+    for title in ("Teacher's Guide", "8_ Science_ Handbook", "Teachers' Handbook"):
+        assert is_teacher_handbook({"chapter": title})
+    for title in ("Heat", "DIY Stethoscope - Activity Guide", "APSCERT_8PS_TEACHER CORNER",
+                  "VI_SCIENCE LAB MANUAL_EM", "Student Handbook", "Lesson 4"):
+        assert not is_teacher_handbook({"chapter": title})
+
+
+def test_a_textbook_activity_aim_stays():
+    from ingest.page_quality import states_lesson_aims
+
+    assert not states_lesson_aims("Aim: To confirm the presence of starch in potato. What you need: iodine.")
+    assert not states_lesson_aims("Objective: to show that plant decay adds materials to soil.")
+    assert not states_lesson_aims("Precautions: Students should be careful while heating the rod.")
+    assert not states_lesson_aims("No child shall be held back in any class.")
+    assert states_lesson_aims("In this concept, children will learn about the properties of magnets.")
+    assert states_lesson_aims("By the end of this lesson you can name three fuels.")
 
 # --------------------------------------------------- which index the device uses
 def _bake(root, name):

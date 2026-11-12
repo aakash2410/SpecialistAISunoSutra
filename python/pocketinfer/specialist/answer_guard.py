@@ -178,14 +178,42 @@ def unsupported_credit(sentence: str, passage: str) -> bool:
     return True
 
 
+# A lesson aim or learning outcome, not a fact. On 12 November the device answered "tell me
+# about the heat endaction" with "The teacher will guide students through an experiment to
+# observe heat transfer by conduction ..." and "Students will also justify why they wear certain
+# kinds of clothes in summer and winter", rephrased from lesson plans. The passage supports such
+# a sentence, so the entailment check keeps it. The index leaves out passages with these phrases
+# (ingest/page_quality.py), and this catches what is left, with a wider list.
+LESSON_AIM = re.compile(
+    r"\b(?:students?|learners?|pupils?|children|child)\s+(?:will|would|shall|should|can|must)\s+(?:also\s+)?"
+    r"be\s+able\s+to\b"
+    r"|\b(?:students|learners|pupils)\s+(?:will|would|shall)\b"
+    r"|\bchildren\s+(?:will|would|shall)\s+(?:also\s+)?(?:learn|understand|know|explore|recall|discuss|identify|explain|"
+    r"describe|justify|classify|appreciate|develop|be\s+introduced)\b"
+    r"|\b(?:the|a|your)\s+teachers?\s+(?:will|would|should|can|may|shall)\b|\bteachers?\s+will\b"
+    r"|\bby\s+the\s+end\s+of\s+(?:this|the)\s+(?:lesson|chapter|unit|period|class|session|topic|activity)\b"
+    r"|\blearning\s+(?:outcomes?|objectives?)\b|\b(?:lesson|teaching|instructional)\s+(?:objectives?|aims?)\b"
+    r"|\b(?:aims?|objectives?|goals?)\s+of\s+(?:this|the)\s+(?:lesson|chapter|unit|activity|period|class)\b"
+    r"|^\W*(?:aims?|objectives?)\s*:",
+    re.IGNORECASE,
+)
+
+
+def lesson_aim(sentence: str, passage: str = "") -> bool:
+    """The sentence states what a lesson will do or what students will learn. The passage does
+    not matter: such a sentence is not an answer, whatever the passage says."""
+    return bool(LESSON_AIM.search(sentence))
+
+
 def contradicts(sentence: str, passages: Iterable[str], allowed_names: Iterable[str] = ()) -> bool:
-    """True when the sentence flips a fact against every passage it could have come from.
+    """True when the sentence flips a fact against every passage it could have come from, or
+    states a lesson aim rather than a fact.
 
     ``allowed_names`` goes to unseen_name, for examples only (see there).
     """
     allowed_names = set(allowed_names)
     checks = (wrong_number, flipped_opposite, reversed_direction,
-              lambda s, p: unseen_name(s, p, allowed_names), dropped_negation, unsupported_credit)
+              lambda s, p: unseen_name(s, p, allowed_names), dropped_negation, unsupported_credit, lesson_aim)
     passages = list(passages)
     return bool(passages) and all(any(c(sentence, p) for c in checks) for p in passages)
 
