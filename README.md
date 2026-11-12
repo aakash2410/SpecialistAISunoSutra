@@ -13,7 +13,7 @@ The Specialist is an offline voice expert for rural classrooms. A teacher or stu
 - **Examples come from the children's own lives.** After an explanation, the device adds one example from village life. Teachers can hand it their own list of 30 to 40 everyday examples to draw from. Every example gets checked: it must show a textbook fact and add nothing new.
 - **Three classes of science, one open licence.** The index now covers Class 6 to 8 science: 46,938 passages from 1,526 books, all CC BY 4.0. It answers 21 of 22 science questions and refuses 28 of 30 off-topic ones.
 - **Safer and more honest.** It catches indirect self-harm statements, 13 of 14 on the frozen holdout. It refuses "Who invented the telephone?" instead of crediting Edison, and turns away everyday how-to requests the textbook can't answer.
-- **Hands-free and lighter.** It is set up to start at boot, records on a touch sensor or any USB key, repeats or slows its last answer on request, and installs only what the Jetson needs.
+- **Hands-free and lighter.** It is set up to start at boot, records on a tap of its touch screen or any USB key, repeats or slows its last answer on request, and installs only what the Jetson needs.
 
 We also tested a bigger answer model, Qwen3.5-2B, and kept Qwen2.5-1.5B. The smaller model answered more questions, refused more off-topic ones, and spoke its first sentence about four times faster. Everything above passes on the Mac. The Jetson run is next.
 
@@ -49,7 +49,7 @@ Mac run of the journey runner, English, 11 November: journey 1 pass, journey 2 f
 | Wrong answers: Edison and the telephone, "how do I cook food" | Done. A credit for an invention or discovery must be in the passage, and everyday how-to requests are refused. Off-topic refused went from 26 to 29 of 30, with no answers lost | 0 |
 | Journey test runner, pass or fail per journey | Done. Mac English run complete. Hindi run waits for the Jetson | 0 |
 | Voice that sounds less robotic | Flite variants ready to compare on the Jetson | 1 |
-| Talk button | Code done. Waiting for the touch sensor wiring and `gpioinfo` | 0.5 |
+| Talk button | A tap on the touch screen. Code done (`local/screen.py`), waiting for the Jetson demo and install | 0.5 |
 | Boot service | Done. Waiting for the Jetson install | 0 |
 | Power and case | Power measurement and power bank pending. Cardboard case | 0 |
 | Screen as a backup to the voice | Waveshare 2.8 inch touch LCD wired and showing colours on 12 Nov (ST7789 chip, spi1 on, `tools/screen_pins.sh` lets pins 29, 31, 32 drive). Touch confirmed (press reads Z1 113 to 630, untouched under 20). Left: add the pin fix to the install, calibrate touch on screen, program what it shows (what was heard and the answer) | 1 |
@@ -144,7 +144,7 @@ A teacher can ask for one level instead, as in "for weak students" or "for stude
 | Class progress tracking | Not in v1. Nothing about students is stored |
 | Memory | Stays in RAM and clears after 3 minutes, on a shared device. Per-grade memory for a whole class is not in v1 |
 | Students using it alone (journeys 3 and 4) | Not until a safeguarding reviewer has approved the safety replies and helpline numbers. Until then, a teacher is present |
-| Talk button | A touch sensor on the 40-pin header. Enter on a USB keyboard also works |
+| Talk button | A tap on the 2.8 inch touch screen, which also shows the answer. Enter on a USB keyboard also works. No separate touch sensor (TTP223 dropped on 12 Nov) |
 | Power | Both: the 19 V mains adapter, and a USB-C power bank through the ETZIN cable set to 15 V |
 | Case | Cardboard for the prototype. The 3D-printed V3 case for classroom units |
 | Answer check fine-tune and Qwen refusal fine-tune | Not in v1 |
@@ -170,13 +170,13 @@ Finding a safeguarding reviewer runs alongside, since journeys 3 and 4 wait on i
 | Power | The 19 V mains adapter, or a USB-C power bank (45 to 100 W, 15 V / 3 A, about 20,000 mAh, pass-through charging) through the ETZIN cable set to 15 V |
 | Microphone and camera | Arducam 8MP USB camera (B0292) |
 | Speaker | USB speaker |
-| Talk button | Touch sensor on the 40-pin header, powered from 3.3 V |
+| Talk button | The touch screen itself. A USB keyboard's Enter is the backup |
 | Screen | Waveshare 2.8 inch resistive touch LCD from the VYOMA challenge kit: 320 x 240, ST7789 display chip, XPT2046 touch, on spi1 of the 40-pin header. Wiring and test in `tools/screen_test.py`. A backup if the voice doesn't work. Programming it comes later |
 | Case | Cardboard box for the prototype. 3D-printed V3 case for classroom units. See the [case spec](https://claude.ai/artifact/3D3fcDWkQKapE3nWWFvjEt), private until shared |
 
 ## Run it
 
-Install steps are in [module/README.md](module/README.md). After the install, the loop starts at boot. Press the talk button (Enter on any USB keyboard, or a touch sensor) to record, and press it again to stop. Say "repeat that" or "slower" to hear the last answer again. Ask for a lesson plan with, for example, "Give me a lesson plan on photosynthesis for tomorrow's class".
+Install steps are in [module/README.md](module/README.md). After the install, the loop starts at boot. Tap the screen (or press Enter on any USB keyboard) to record, and tap again to stop. Say "repeat that" or "slower" to hear the last answer again. Ask for a lesson plan with, for example, "Give me a lesson plan on photosynthesis for tomorrow's class".
 
 To run it by hand on the Jetson, stop the service first, then press Enter in the terminal to record:
 

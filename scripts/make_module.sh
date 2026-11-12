@@ -78,6 +78,7 @@ ship_model "$VERIFIER" model.onnx tokenizer.json config.json
 ship_model "$SAFETY" model.onnx tokenizer.json config.json
 ship_model "$LANGID" model.onnx labels.json
 cp "$ROOT/tools/fetch_assets.py" "$ROOT/module/assets.json" "$OUT/payload/tools/"
+cp "$ROOT/tools/screen_pins.sh" "$OUT/payload/tools/"   # the screen's pin fix (specialist_screen)
 
 # --- content: the one baked index the device will use, not raw harvests ------
 # Same choice as the voice loop (local/corpus_index.py), looking in this repo only.

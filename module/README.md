@@ -234,6 +234,36 @@ At boot the voice loop starts as the `specialist-voice` service. It doesn't use 
 - **USB keyboard or keypad (`key`, the default):** press Enter. Any keyboard works, plugged in before or after boot.
 - **Touch sensor (`gpio`):** wire the sensor's power to a 3.3 V pin, never 5 V, its ground to a ground pin and its signal to a GPIO pin. Find that pin's chip and line with `gpioinfo`, then install with `-e specialist_trigger=gpio -e specialist_gpio_chip=gpiochip0 -e specialist_gpio_line=<line> --tags boot`.
 
+- **The touch screen (`screen`):** tap anywhere on it. It joins whatever `specialist_trigger` is set to, so a keypad or touch sensor still works too. See [The screen](#the-screen).
+
+## The screen
+
+The Waveshare 2.8 inch resistive touch LCD (ST7789 display, XPT2046 touch) is optional. It sits on spi1 of the 40-pin header. It shows a coloured bar with the state: tap to ask, listening, thinking, answer, or not in the textbooks. Below the bar it shows the question as heard and the answer, sentence by sentence as it is spoken. The model's own examples appear in blue. The answer stays up until the next question. If the screen is missing or fails, the voice loop carries on with voice only.
+
+Wiring, with the Jetson off (the Jetson's header pin numbers):
+
+| Screen | 5V | GND | MOSI | MISO | SCLK | LCD_CS | TP_CS | LCD_DC | LCD_RST | LCD_BL | TP_IRQ |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Jetson pin | 2 | 6 | 19 | 21 | 23 | 24 | 26 | 29 | 31 | 32 | not used |
+
+1. On the Jetson, turn on spi1 from jetson-io's menu: run `sudo /opt/nvidia/jetson-io/jetson-io.py`, choose Configure Jetson 40pin Header, then Configure header pins manually. Tick spi1, then go Back, Save pin changes, and Save and reboot. Its command-line tool saves the setting without adding it to the boot entry, so use the menu.
+2. From the Mac, install with the screen on, then reboot the Jetson:
+
+```bash
+~/Library/Python/3.9/bin/ansible-playbook -i inventory.ini install_specialist.yml -K -e specialist_screen=true --tags app,screen
+```
+
+The install does five things:
+- It stops if spi1 is off.
+- It runs `tools/screen_pins.sh`. JetPack 6 leaves pins 29, 31 and 32 unable to drive, so the screen stays blank until this adds them as outputs to jetson-io's overlay.
+- It installs the fonts and the Python packages.
+- It gives the service user the SPI bus.
+- It adds `screen` to the talk button.
+
+Running jetson-io again rewrites the overlay, so run the install again afterwards.
+
+To check it by hand, stop the service, then run `cd /opt/specialist/app && /opt/specialist/venv/bin/python -m local.screen demo`. `demo` draws each state, `touch` prints where presses land, and `calibrate` maps presses to pixels. Touch reads pressure, so TP_IRQ is not needed. If the text is upside down, install with `-e specialist_screen_rotation=270`.
+
 To watch it, or stop it before running `specialist-voice` by hand or running the tests:
 
 ```bash

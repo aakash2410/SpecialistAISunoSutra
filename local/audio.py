@@ -40,13 +40,16 @@ class AlsaArecordMic:
     name = "arecord-mic"
 
     def __init__(self, device: str = "plughw:1,0", sample_rate: int = DEFAULT_RATE, prompt: bool = True,
-                 trigger=None, max_seconds: float = MAX_RECORD_SECONDS, cues: Optional[bool] = None):
+                 trigger=None, max_seconds: float = MAX_RECORD_SECONDS, cues: Optional[bool] = None,
+                 on_state=None):
         self.device = device
         self.sample_rate = sample_rate
         self.prompt = prompt
         self.trigger = trigger
         self.max_seconds = max_seconds
         self.cues = trigger is not None if cues is None else cues
+        # Told "waiting" and "listening", e.g. by the screen (local.screen).
+        self.on_state = on_state or (lambda _state: None)
 
     def _wait_start(self) -> None:
         if self.trigger is None:
@@ -72,7 +75,9 @@ class AlsaArecordMic:
     def record(self) -> AudioClip:
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         tmp.close()
+        self.on_state("waiting")
         self._wait_start()
+        self.on_state("listening")
         if self.cues:
             play_wav_bytes(beep_wav(START_TONE))  # before recording starts, so it is not recorded
         proc = subprocess.Popen(

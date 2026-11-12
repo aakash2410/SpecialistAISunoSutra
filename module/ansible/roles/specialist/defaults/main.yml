@@ -94,3 +94,9 @@ specialist_voice_out_lang: auto
 specialist_trigger: key
 specialist_gpio_chip: ""
 specialist_gpio_line: ""
+# The 2.8 inch touch screen (local/screen.py). Opt-in: -e specialist_screen=true --tags screen.
+# It shows the state, the question and the answer, and a tap on it works as the talk button
+# too. Turn on spi1 with jetson-io first (see module/README.md). Rotation is 90 or 270 for
+# landscape; use the other one if the text is upside down.
+specialist_screen: false
+specialist_screen_rotation: 90

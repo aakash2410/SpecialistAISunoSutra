@@ -10,7 +10,13 @@ User={{ specialist_user }}
 ExecStart=/usr/local/bin/specialist-voice --in-lang {{ specialist_voice_in_lang }} --out-lang {{ specialist_voice_out_lang }}
 Environment=PYTHONUNBUFFERED=1
 # Set here, not in /etc/default/specialist, so specialist-voice run by hand still uses Enter.
+{% if specialist_screen | bool %}
+Environment=SPECIALIST_TRIGGER={{ specialist_trigger }},screen
+Environment=SPECIALIST_SCREEN=1
+Environment=SPECIALIST_SCREEN_ROTATION={{ specialist_screen_rotation }}
+{% else %}
 Environment=SPECIALIST_TRIGGER={{ specialist_trigger }}
+{% endif %}
 {% if specialist_gpio_chip %}
 Environment=SPECIALIST_GPIO_CHIP={{ specialist_gpio_chip }}
 Environment=SPECIALIST_GPIO_LINE={{ specialist_gpio_line }}

@@ -49,6 +49,8 @@ def _fmt_timings(t: dict) -> str:
 
 
 class LoopHarness:
+    screen = None  # the 2.8 inch screen (local.screen), when --screen is on
+
     def __init__(self, args):
         self.args = args
         self.in_lang = args.in_lang.lower()
@@ -95,6 +97,12 @@ class LoopHarness:
         from pocketinfer.specialist.session import Session
 
         self.session = Session()
+        self.screen = None
+        if args.screen:
+            from local.screen import open_screen
+
+            self.screen = open_screen("hi" if self.in_lang == "hi" else "en",
+                                      touch="screen" in args.trigger)
         # Only a real answer model can rewrite follow-ups; the extractive one would echo a passage.
         self.rewrite_llm = self.engine.llm if args.llm == "ollama" else None
         self._texts = list(args.text or [])
@@ -231,6 +239,8 @@ class LoopHarness:
             return True
         slow = command == "slower"
         print(f"[{command}] saying the last answer again{' slowly' if slow else ''}:")
+        if self.screen:
+            self.screen.show_answer(list(self.session.last_text), self.turn_out)
         for text in self.session.last_text:
             print(f"   · {text}")
         if self.tts_provider is not None:
@@ -250,11 +260,18 @@ class LoopHarness:
         T = {}
         t0 = time.time()
         ts = time.time()
+        screen = self.screen
+        if screen and mic is None:  # typed text or a page: no listening step
+            screen.listening()
         raw = self._capture_text(mic)
         T["capture"] = time.time() - ts
         if not raw:
             print("[skip] nothing heard.")
+            if screen:
+                screen.ready()
             return False
+        if screen:
+            screen.heard(raw, self.turn_in)
         if self.session.is_reset(raw):
             self.session.clear()
             print("[session] new topic, earlier questions forgotten")
@@ -287,7 +304,11 @@ class LoopHarness:
                 print(f"[steps] {_fmt_timings(sr.timings)}")
             if sr.refused:
                 print(f"[3 SPEC] REFUSED — {sr.reason}")
+                if screen:
+                    screen.refused(sr.spoken_text, self.turn_out)
                 return
+            if screen:
+                screen.sentence(sr.spoken_text, sr.example, self.turn_out)
             if not header["printed"]:
                 print("[3 SPEC] streaming:")
                 header["printed"] = True
@@ -314,18 +335,21 @@ class LoopHarness:
 
     def run(self):
         once = self.run_once
-        # Single-shot input modes.
-        if self.args.text:
-            for _ in self.args.text:
-                once(None)
-            return
-        if self.args.from_image:
-            once(None)
-            return
-        if self.args.from_wav:
-            from local.audio import WavFileMic
+        # Single-shot input modes. The screen keeps showing the last answer afterwards.
+        if self.args.text or self.args.from_image or self.args.from_wav:
+            try:
+                if self.args.text:
+                    for _ in self.args.text:
+                        once(None)
+                elif self.args.from_image:
+                    once(None)
+                else:
+                    from local.audio import WavFileMic
 
-            once(WavFileMic(self.args.from_wav))
+                    once(WavFileMic(self.args.from_wav))
+            finally:
+                if self.screen:
+                    self.screen.close()
             return
 
         # Live mic loop.
@@ -333,9 +357,10 @@ class LoopHarness:
         from local.triggers import make_trigger
 
         trigger = None if self.args.trigger == "enter" else make_trigger(
-            self.args.trigger, self.args.gpio_chip, self.args.gpio_line)
-        mic = AlsaArecordMic(self.args.mic_device, trigger=trigger)
-        print(f"\n== Specialist voice loop == trigger={self.args.trigger} (Ctrl-C to quit)", flush=True)
+            self.args.trigger, self.args.gpio_chip, self.args.gpio_line, screen=self.screen)
+        mic = AlsaArecordMic(self.args.mic_device, trigger=trigger, on_state=self._mic_state)
+        print(f"\n== Specialist voice loop == trigger={getattr(trigger, 'name', 'enter')} "
+              f"(Ctrl-C to quit)", flush=True)
         try:
             while True:
                 try:
@@ -346,8 +371,21 @@ class LoopHarness:
                     # One failed question (a service restarting, a bad recording) must not
                     # stop the device: log it and wait for the next press.
                     logging.exception("this question failed, waiting for the next one")
+                    if self.screen:
+                        self.screen.error()
         except KeyboardInterrupt:
             print("\nbye.")
+        finally:
+            if self.screen:
+                self.screen.close()
+
+    def _mic_state(self, state: str) -> None:
+        if not self.screen:
+            return
+        if state == "waiting":
+            self.screen.ready()
+        elif state == "listening":
+            self.screen.listening()
 
 
 def main():
@@ -363,7 +401,11 @@ def main():
                     help="ALSA capture device for the live mic (find it with arecord -l)")
     ap.add_argument("--trigger", default=os.environ.get("SPECIALIST_TRIGGER", "enter"),
                     help="what starts and stops recording on the live mic: enter (terminal), "
-                         "key (any USB keyboard or keypad, no terminal needed) or gpio (touch sensor)")
+                         "key (any USB keyboard or keypad, no terminal needed), gpio (touch sensor) "
+                         "or screen (tap the touch screen). Join several with commas: gpio,screen")
+    ap.add_argument("--screen", action="store_true",
+                    default=os.environ.get("SPECIALIST_SCREEN", "") == "1",
+                    help="show the state, the question and the answer on the 2.8 inch screen")
     ap.add_argument("--gpio-chip", default=os.environ.get("SPECIALIST_GPIO_CHIP"),
                     help="with --trigger gpio, the chip from gpioinfo, e.g. gpiochip0")
     ap.add_argument("--gpio-line", type=int, default=(int(os.environ["SPECIALIST_GPIO_LINE"])

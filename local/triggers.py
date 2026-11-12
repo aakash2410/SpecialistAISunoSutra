@@ -182,7 +182,68 @@ class GpioTrigger:
                 return True
 
 
-def make_trigger(name: str, gpio_chip: Optional[str] = None, gpio_line: Optional[int] = None, prompt: str = ""):
+class AnyTrigger:
+    """Several talk buttons at once, e.g. a touch sensor and the touch screen.
+
+    Each one waits on its own thread. Presses made before ``wait`` starts are forgotten,
+    as the key trigger does.
+    """
+
+    def __init__(self, triggers):
+        import queue
+        import threading
+
+        self.triggers = list(triggers)
+        self.name = ",".join(t.name for t in self.triggers)
+        self._presses = queue.Queue()
+        for trigger in self.triggers:
+            threading.Thread(target=self._watch, args=(trigger,), name=f"trigger-{trigger.name}",
+                             daemon=True).start()
+
+    def _watch(self, trigger) -> None:
+        while True:
+            try:
+                if trigger.wait(timeout=1.0):
+                    self._presses.put(time.monotonic())
+            except Exception:  # noqa: BLE001  one broken button must not stop the others
+                logger.exception("the %s trigger failed", trigger.name)
+                time.sleep(5.0)
+
+    def wait(self, timeout: Optional[float] = None) -> bool:
+        import queue
+
+        started = time.monotonic()
+        deadline = None if timeout is None else started + timeout
+        while True:
+            left = None if deadline is None else max(0.0, deadline - time.monotonic())
+            try:
+                pressed_at = self._presses.get(timeout=left)
+            except queue.Empty:
+                return False
+            if pressed_at >= started:
+                return True
+
+
+def make_trigger(name: str, gpio_chip: Optional[str] = None, gpio_line: Optional[int] = None,
+                 prompt: str = "", screen=None):
+    """One trigger by name, or several joined by commas, e.g. "gpio,screen"."""
+    if "," in name:
+        parts = [part.strip() for part in name.split(",") if part.strip()]
+        triggers = []
+        for part in parts:
+            try:
+                triggers.append(make_trigger(part, gpio_chip, gpio_line, prompt, screen))
+            except (ValueError, RuntimeError) as e:
+                logger.warning("skipping the %s trigger: %s", part, e)
+        if not triggers:
+            raise ValueError(f"none of the triggers in {name!r} is available")
+        return triggers[0] if len(triggers) == 1 else AnyTrigger(triggers)
+    if name == "screen":
+        if screen is None or screen.touch is None:
+            raise RuntimeError("the screen trigger needs the touch screen (--screen)")
+        from local.screen import TouchTrigger
+
+        return TouchTrigger(screen.touch)
     if name == "enter":
         return EnterTrigger(prompt)
     if name == "key":

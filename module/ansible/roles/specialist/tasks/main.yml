@@ -542,18 +542,18 @@
     dest: /etc/default/specialist
     mode: "0644"
 
-- name: Install the camera rules
-  tags: [boot]
+- name: Install the camera and screen rules
+  tags: [boot, screen]
   become: true
   ansible.builtin.template:
     src: 99-specialist-devices.rules.j2
     dest: /etc/udev/rules.d/99-specialist-devices.rules
     mode: "0644"
 
-- name: Apply the camera rules
-  tags: [boot]
+- name: Apply the camera and screen rules
+  tags: [boot, screen]
   become: true
-  ansible.builtin.shell: udevadm control --reload-rules && udevadm trigger --action=add --subsystem-match=usb --subsystem-match=video4linux
+  ansible.builtin.shell: udevadm control --reload-rules && udevadm trigger --action=add --subsystem-match=usb --subsystem-match=video4linux --subsystem-match=spidev
 
 - name: Install the boot check
   tags: [boot]
@@ -600,8 +600,66 @@
     groups: "{{ ['input', 'audio', 'gpio'] | select('in', ansible_facts.getent_group) | list }}"
     append: true
 
+# ---------------------------------------------------------------- the screen
+# Opt-in (specialist_screen). spi1 has to be on first, from jetson-io's menu, because its
+# command-line tool saves the setting without adding it to the boot entry.
+- name: Check that spi1 is on for the screen
+  tags: [boot, screen]
+  become: true
+  ansible.builtin.shell: grep -q spi1_cs0_pz6 /boot/jetson-io-hdr40-user-custom.dtbo
+  register: specialist_spi1
+  changed_when: false
+  failed_when: false
+  when: specialist_screen | bool
+
+- name: Stop if spi1 is off
+  tags: [boot, screen]
+  ansible.builtin.fail:
+    msg: >-
+      The screen needs spi1. On the Jetson run sudo /opt/nvidia/jetson-io/jetson-io.py,
+      choose Configure Jetson 40pin Header, Configure header pins manually, tick spi1,
+      Back, Save pin changes, Save and reboot. Then run this again.
+  when:
+    - specialist_screen | bool
+    - specialist_spi1.rc != 0
+
+# JetPack 6 leaves the screen's control pins (29, 31, 32) unable to drive, so the
+# screen stays blank. This adds them as outputs to jetson-io's overlay.
+- name: Let the screen's control pins drive
+  tags: [boot, screen]
+  become: true
+  ansible.builtin.script: "{{ playbook_dir }}/../payload/tools/screen_pins.sh"
+  register: specialist_screen_pins
+  changed_when: "'Done.' in specialist_screen_pins.stdout"
+  when: specialist_screen | bool
+
+- name: Fonts for the screen, and the library Hindi text shaping needs
+  tags: [boot, screen]
+  become: true
+  ansible.builtin.apt:
+    pkg: [fonts-dejavu-core, fonts-lohit-deva, libfribidi0]
+    install_recommends: false
+  when: specialist_screen | bool
+
+- name: Python packages for the screen
+  tags: [app, screen]
+  ansible.builtin.pip:
+    name: [pillow, Jetson.GPIO]
+    extra_args: --no-cache-dir
+    virtualenv: "{{ specialist_venv }}"
+    virtualenv_command: python3 -m venv
+  when: specialist_screen | bool
+
+- name: Say a reboot is needed for the screen pins
+  tags: [boot, screen]
+  ansible.builtin.debug:
+    msg: "The screen's pin settings apply from the next boot: sudo reboot"
+  when:
+    - specialist_screen | bool
+    - specialist_screen_pins is changed
+
 - name: Install the voice loop service
-  tags: [boot]
+  tags: [boot, screen]
   become: true
   ansible.builtin.template:
     src: specialist-voice.service.j2
@@ -649,7 +707,7 @@
 
 # Restarted so a reinstall runs the new code and settings.
 - name: Start the voice loop at boot
-  tags: [boot]
+  tags: [boot, screen]
   become: true
   ansible.builtin.systemd:
     name: specialist-voice
