@@ -52,7 +52,7 @@ Mac run of the journey runner, English, 11 November: journey 1 pass, journey 2 f
 | Talk button | Code done. Waiting for the touch sensor wiring and `gpioinfo` | 0.5 |
 | Boot service | Done. Waiting for the Jetson install | 0 |
 | Power and case | Power measurement and power bank pending. Cardboard case | 0 |
-| Screen as a backup to the voice | Screen in hand, from the VYOMA kit. Check its connector and model, connect it to the Jetson, then program what it shows (what was heard and the answer) | 1 |
+| Screen as a backup to the voice | Waveshare 2.8 inch touch LCD wired and showing colours on 12 Nov (ST7789 chip, spi1 on, `tools/screen_pins.sh` lets pins 29, 31, 32 drive). Touch confirmed (press reads Z1 113 to 630, untouched under 20). Left: add the pin fix to the install, calibrate touch on screen, program what it shows (what was heard and the answer) | 1 |
 | Safeguarding review | Reviewer not yet found | 0 |
 
 | Measure | Result |
@@ -171,7 +171,7 @@ Finding a safeguarding reviewer runs alongside, since journeys 3 and 4 wait on i
 | Microphone and camera | Arducam 8MP USB camera (B0292) |
 | Speaker | USB speaker |
 | Talk button | Touch sensor on the 40-pin header, powered from 3.3 V |
-| Screen | Small screen from the VYOMA challenge kit, as a backup if the voice doesn't work. Programming it comes later |
+| Screen | Waveshare 2.8 inch resistive touch LCD from the VYOMA challenge kit: 320 x 240, ST7789 display chip, XPT2046 touch, on spi1 of the 40-pin header. Wiring and test in `tools/screen_test.py`. A backup if the voice doesn't work. Programming it comes later |
 | Case | Cardboard box for the prototype. 3D-printed V3 case for classroom units. See the [case spec](https://claude.ai/artifact/3D3fcDWkQKapE3nWWFvjEt), private until shared |
 
 ## Run it
