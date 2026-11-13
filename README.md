@@ -4,6 +4,18 @@ An offline subject expert for rural classrooms, built on the Suno Sutra platform
 
 ![The Specialist: one device, four classroom journeys](docs/system.png)
 
+## What the language model does, and what it doesn't
+
+The device has one small language model, Qwen2.5-1.5B, run through Ollama. It does three jobs. Everything else comes from DIKSHA textbooks, specialised models and fixed rules.
+
+| Qwen2.5-1.5B does only this | Everything else, and what does it |
+|---|---|
+| **Paraphrasing:** rephrasing the retrieved DIKSHA passages into a short spoken answer. Lesson plans, revisions and quiz feedback use this same answer | **Content:** DIKSHA Class 6 to 8 science, CC BY 4.0. **Search:** e5. **Quiz and check questions:** quoted from the textbook. **Choosing the mode:** rules |
+| **Examples:** one everyday example from village life or the teacher's own list | **Safety:** patterns, rules and a fine-tuned safety model. **Approving answers:** an NLI answer check plus fact rules. The same NLI model judges quiz answers |
+| **Interaction reasoning:** working out what "it" means in a follow-up such as "why do leaves need it?" and rewriting it as a full question, without answering it or adding facts | **Language ID:** ECAPA and Whisper. **Speech to text:** Whisper `tiny.en`, and Bhashini for Hindi. **Translation:** a glossary and Bhashini. **Voice:** Flite through Bhashini. **Page reading:** Tesseract |
+
+Nothing Qwen writes is spoken unless the answer check ties it to a DIKSHA passage: each answer sentence must be supported by one, and an example must illustrate a checked sentence without contradicting its passage. A rewritten follow-up is never spoken, only searched and answered like any other question.
+
 ## What's new this sprint
 
 This sprint turned a question-answering box into a classroom assistant that covers all four journeys Honey mapped out, and put it on the Jetson with a screen.
@@ -78,10 +90,10 @@ The diagram at the top shows the whole device. Every request takes the same firs
 3. **Spoken commands:** "repeat that", "slower", "new topic", "that's all" and "switch off", and their Hindi forms, are handled at once from memory, through filler words such as "okay", "now", "अच्छा" or "अब". "New topic. What is friction?" clears the conversation and answers the new question. "Switch off" (or "बंद हो जाओ") asks "Do you want me to switch off?", and only a yes within 20 seconds shuts the device down.
 4. **Translate:** a Hindi request becomes English, with a glossary fixing subject terms first.
 5. **Safety check:** a flagged request gets a fixed, hand-written reply and never reaches the answer model.
-6. **Mode:** a lesson plan, a revision, a quiz, or a doubt. A follow-up is rewritten from the last 3 turns first.
+6. **Mode:** rules pick a lesson plan, a revision, a quiz, or a doubt. A follow-up is first rewritten by Qwen as a full question from the last 3 turns, without answering it.
 7. **Retrieve:** e5 searches the local index, the named class's books first. Questions about today are refused.
 8. **Gate:** a passage must score at least 0.80 and share a key term with the request. If a topic word of 5 letters or more is in no passage at all, the device doesn't answer from the other words. It offers a textbook word spelt like it that often goes with the other words ("Did you mean heat conduction?"), or asks the teacher to say it again.
-9. **Answer:** Qwen rephrases the passages, one sentence at a time.
+9. **Paraphrase:** Qwen rephrases the passages, one sentence at a time.
 10. **Check:** any sentence no passage supports is dropped, along with any that flips a number, name, direction or negation, and any that states a lesson aim, such as "Students will …". If none survive, the device searches once more for the question's own phrase, then refuses.
 11. **Example:** after an explanation, a second Qwen call gives one example from village life or the teacher's list. It has its own check: it must be a case of a kept sentence, add no number or name, flip no fact, stay close to the question and pass the safety check.
 12. **Respond:** each kept sentence is translated, spoken and shown on the screen while the next is written.
@@ -124,9 +136,9 @@ A student asks in Hindi or English and hears the answer in the same language. A 
 
 | Part | Choice | Runs on |
 |---|---|---|
-| Answer model | Qwen2.5-1.5B through Ollama, swappable with one setting | GPU |
+| Answer model | Qwen2.5-1.5B through Ollama, swappable with one setting. Used only to paraphrase passages, write examples and rewrite follow-ups | GPU |
 | Retrieval | `multilingual-e5-small`, 42,426 Class 6 to 8 science passages | CPU |
-| Answer check | `nli-deberta-v3-base`, threshold 0.9 | CPU |
+| Answer check | `nli-deberta-v3-base`, threshold 0.9. Also judges quiz answers and checks examples | CPU |
 | Safety check | Patterns, a general question rule, then `nli-deberta-v3-small` fine-tuned for safety | CPU |
 | Hindi speech and translation | Bhashini | GPU for translation |
 | Spoken language ID | SpeechBrain ECAPA, exported to ONNX | CPU |

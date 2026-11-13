@@ -5,7 +5,8 @@
   .two { display: grid; grid-template-columns: minmax(0,1fr) 62px minmax(0,1fr) 62px minmax(0,1fr); }
   .lanes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
   .core { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 26px; }
-  .core .box { position: relative; }
+  .core .box { position: relative; padding: 10px 10px; }
+  .core .box h3 { font-size: 15px; gap: 4px; }
   .core .box:not(:last-child)::after { content: ""; position: absolute; right: -25px; top: 44%; width: 24px; height: 12px;
      background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='12'><line x1='0' y1='6' x2='15' y2='6' stroke='%2317232b' stroke-width='2'/><polygon points='14,1 24,6 14,11' fill='%2317232b'/></svg>") no-repeat; }
   .uses { margin-top: 6px; }
@@ -14,11 +15,22 @@
   .out .box + .box { margin-left: 12px; }
   .legend { font-size: 13px; }
   .stop { color: var(--red); font-weight: bold; font-size: 13px; }
+  /* The three steps Qwen2.5-1.5B does. Everything else is DIKSHA text, another model or a rule. */
+  :root { --qwen: #f5c518; --qwen-line: #b98a00; --qwen-bg: #fff8dc; }
+  .box.qwen, .lane .box.qwen { position: relative; background: var(--qwen-bg); border: 2.5px solid var(--qwen-line); }
+  .qwen-tag { font: bold 11px/1 Menlo, monospace; color: var(--ink); background: var(--qwen); border: 1.5px solid var(--qwen-line);
+              border-radius: 4px; padding: 3px 6px; white-space: nowrap; }
+  .box.qwen > .qwen-tag { position: absolute; top: -11px; left: 10px; }
+  .frame .frame-label { margin-bottom: 18px; }
+  .lane .box.qwen { margin-top: 16px; padding: 9px 10px 8px; }
+  .lane .box.qwen h3 { font-size: 14.5px; color: var(--ink); }
+  .lane .box.qwen p { font-size: 13px; }
 </style></head>
 <body><div class="page">
 <h1>The Specialist: one device, four classroom journeys</h1>
 <p class="sub">As of 12 November 2026. Everything runs on the Jetson Orin Nano with the network off. Each journey takes its own route through the
-modes in the middle, and all four share the same textbook core: search, gate, answer, check. The answer model only ever sees approved DIKSHA passages.</p>
+modes in the middle, and all four share the same textbook core: search, gate, paraphrase, check. The small language model, Qwen2.5-1.5B, does only the three
+steps marked <span class="qwen-tag">Qwen</span>: paraphrasing DIKSHA passages, writing an example and rewriting a follow-up. Every other step is DIKSHA text, a specialised model or a rule.</p>
 
 <div class="side">
 <div>
@@ -43,7 +55,8 @@ modes in the middle, and all four share the same textbook core: search, gate, an
   <div class="lane j1"><h3>J1 Teacher prep: lesson plan</h3><p>"Yesterday we covered nutrition in plants", then "Lesson plan on photosynthesis". Recap, key ideas, a simpler version, a check question and a stretch question, for a mixed class or one level</p></div>
   <div class="lane j2"><h3>J2 Multi-grade revision</h3><p>"Revise acids with class 7", then "now do the same for class 8". That class's own books first, an explanation with an example, then its textbook questions</p></div>
   <div class="lane j3"><h3>J3 Student group quiz</h3><p>"Quiz us on photosynthesis". A textbook question, a spoken answer, then "That's right" or "Not quite" with the checked answer. Next question until "stop"</p></div>
-  <div class="lane j4"><h3>J4 Doubts in Hindi or English</h3><p>"प्रकाश संश्लेषण क्या है?", then "and why sunlight?". A follow-up is rewritten from the last 3 turns, then answered like any question</p></div>
+  <div class="lane j4"><h3>J4 Doubts in Hindi or English</h3><p>"प्रकाश संश्लेषण क्या है?", then "and why sunlight?", answered like any question</p>
+    <div class="box qwen"><span class="qwen-tag">Qwen</span><h3>Follow-up rewrite</h3><p>Works out what "it" or "they" refers to from the last 3 turns. It never answers and is never spoken</p></div></div>
 </div>
 <div class="down"><i></i>every explanation and quiz check goes through the same textbook core</div>
 
@@ -54,17 +67,17 @@ modes in the middle, and all four share the same textbook core: search, gate, an
     <div class="uses"><span class="chip j1">J1</span><span class="chip j2">J2</span><span class="chip j3">J3</span><span class="chip j4">J4</span></div></div>
   <div class="box"><h3>Gate</h3><p>Score 0.80 and a shared key term. A word no textbook uses gets "Did you mean …?"</p>
     <div class="uses"><span class="chip j1">J1</span><span class="chip j2">J2</span><span class="chip j3">J3</span><span class="chip j4">J4</span></div></div>
-  <div class="box"><h3>Answer <span class="badge gpu">GPU</span></h3><p>Qwen2.5-1.5B rephrases the passages, one sentence at a time</p>
+  <div class="box qwen"><span class="qwen-tag">Qwen</span><h3>Paraphrase <span class="badge gpu">GPU</span></h3><p>Qwen2.5-1.5B rephrases the passages, one sentence at a time</p>
     <div class="uses"><span class="chip j1">J1</span><span class="chip j2">J2</span><span class="chip j3">J3</span><span class="chip j4">J4</span></div></div>
   <div class="box"><h3>Check <span class="badge cpu">CPU</span></h3><p>NLI drops unsupported sentences, flipped facts and lesson aims</p>
     <div class="uses"><span class="chip j1">J1</span><span class="chip j2">J2</span><span class="chip j3">J3</span><span class="chip j4">J4</span></div></div>
-  <div class="box"><h3>Example <span class="badge gpu">GPU</span></h3><p>One example from village life or the teacher's own list, with its own check</p>
+  <div class="box qwen"><span class="qwen-tag">Qwen</span><h3>Example <span class="badge gpu">GPU</span></h3><p>One example from village life or the teacher's own list, with its own check</p>
     <div class="uses"><span class="chip j1">J1</span><span class="chip j2">J2</span><span class="chip j4">J4</span></div></div>
 </div>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
   <div class="box"><h3>Textbook questions</h3><p>Questions quoted from pages near the topic, only if they read cleanly without the page. The answer model never writes one</p>
     <div class="uses"><span class="chip j1">J1</span><span class="chip j2">J2</span><span class="chip j3">J3</span></div></div>
-  <div class="box"><h3>Judge a quiz answer <span class="badge cpu">CPU</span></h3><p>Against the passages first, then against the device's own checked answer, which is also the feedback</p>
+  <div class="box"><h3>Judge a quiz answer <span class="badge cpu">CPU</span></h3><p>The NLI model checks it against the passages first, then against the device's own checked answer, which is also the feedback</p>
     <div class="uses"><span class="chip j3">J3</span></div></div>
 </div>
 <p class="stop" style="margin:10px 0 0">If no passage passes the gate, or no sentence survives the check, the device says the textbooks on it don't cover the question. Nothing the model wrote is spoken.</p>
@@ -93,5 +106,6 @@ modes in the middle, and all four share the same textbook core: search, gate, an
   <span><span class="chip j3">J3</span> student group quiz</span><span><span class="chip j4">J4</span> doubts in Hindi or English</span>
   <span><span class="badge gpu">GPU</span> runs on the GPU</span><span><span class="badge cpu">CPU</span> runs on the CPU</span>
   <span><span class="swatch" style="border-color:var(--red);background:var(--red-bg)"></span> safety step</span>
+  <span><span class="qwen-tag">Qwen</span> <b style="color:var(--ink)">Qwen2.5-1.5B: only these three steps</b></span>
 </div>
 </div></body></html>

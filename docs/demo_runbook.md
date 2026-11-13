@@ -99,6 +99,7 @@ Commands run on the Jetson, from the laptop.
 
 - **Offline.** The whole loop runs on the Jetson Orin Nano with the network off. No internet, no cloud.
 - **Grounded in approved textbooks.** It answers only from DIKSHA Class 6 to 8 science: 42,426 passages from 1,499 books, all CC BY 4.0. Lesson plan and quiz questions are quoted from the textbook, never invented.
+- **The language model does only three small jobs.** Qwen2.5-1.5B rephrases textbook passages, gives one everyday example and works out what a follow-up such as "why does it need sunlight?" refers to. The facts come from DIKSHA textbooks, and separate models check safety, check every sentence against the textbook, and handle Hindi speech and translation. Nothing Qwen writes is spoken unless the check ties it to a textbook passage.
 - **Refuses rather than guesses.** It answers 21 of 22 science questions and refuses 28 of 30 off-topic ones. A sentence no passage supports is dropped.
 - **Hindi and English, detected for every question,** with a safety check before any answer. On a fresh holdout it caught 13 of 14 unsafe requests and wrongly flagged 0 of 14 safe ones.
 - **No student data.** Memory stays in RAM and clears after 3 minutes, on "new topic", "that's all" and at reboot. No scores are kept.
