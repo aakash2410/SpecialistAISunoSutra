@@ -22,6 +22,9 @@ It also keeps the audio of the last answer, so "repeat that" or "slower" can rep
 without asking again, for a teacher taking notes. That audio clears with the rest of the
 memory. The one exception is a safety reply: it is the device's own fixed words, so it can
 be repeated, while the question that caused it is forgotten.
+
+"Switch off" (or "बंद हो जाओ") is a command too. The device asks for a spoken yes first, and
+remembers that it asked for 20 seconds, so the very next utterance decides it.
 """
 
 from __future__ import annotations
@@ -51,10 +54,40 @@ _CLOSE = re.compile(
     r"^\W*(that'?s (all|it|enough)|that is (all|it|enough)|(we'?re|i'?m|we are|i am) done|done|finished|"
     r"nothing (else|more)|no more( questions)?|stop|end|exit|quit|bye( bye)?|good ?bye|see you|"
     r"thank you( (so|very) much)?|thanks( a lot)?|"
-    r"बस( इतना ही| करो| कीजिए)?|इतना ही|धन्यवाद|बहुत धन्यवाद|शुक्रिया|अलविदा|बंद करो|"
+    r"बस( इतना ही| करो| कीजिए)?|इतना ही|धन्यवाद|बहुत धन्यवाद|शुक्रिया|अलविदा|"
     r"(ख़त्म|खत्म) करो|हो गया)\W*$",
     re.IGNORECASE,
 )
+# Switching the device off. Only the device itself ("yourself", "the device") can follow the
+# verb, so "switch off the light" or "Why does the fan turn off?" stay questions. "बंद करो"
+# is here, not in _CLOSE: said to the device it means "switch off", and the spoken yes the
+# device then asks for makes a mishearing cost one "no".
+_DEVICE_EN = r"(yourself|it|the (device|system|machine|specialist)|this (device|machine|system))"
+_DEVICE_HI = (r"((डिवाइस|मशीन|सिस्टम|यंत्र|अपने आप|ख़ुद|खुद|इस|इसे|इसको|device|machine|system|apne aap|khud)"
+              r"( को| ko)? )?")
+_OFF_HI = r"ऑ(फ|फ़)़?"  # ऑफ़ is written with or without the nukta
+_POWEROFF = re.compile(
+    r"^\W*" + r"(please\s+)?("
+    r"(switch|turn|power|shut) (" + _DEVICE_EN + r" )?off( " + _DEVICE_EN + r")?|"
+    r"(power|shut) (" + _DEVICE_EN + r" )?down( " + _DEVICE_EN + r")?|"
+    + _DEVICE_HI + r"(स्विच|पावर) " + _OFF_HI + r"( (करो|कर दो|कीजिए|कर दीजिए|करिए|करें|हो जाओ|हो जाइए))?|"
+    + _DEVICE_HI + r"(switch|power) off( (karo|kar do|kariye|kijiye|kar dijiye|ho jao|ho jaao))?|"
+    + _DEVICE_HI + r"बंद (करो|कर दो|कीजिए|कर दीजिए|करिए|करें|कर दें|हो जाओ|हो जाइए|हो जाएँ|हो जाएं)|"
+    + _DEVICE_HI + r"band (karo|kar do|kariye|kijiye|kar dijiye|ho jao|ho jaao|ho jaiye))"
+    r"(\s+please)?\W*$",
+    re.IGNORECASE,
+)
+# The answer to "Do you want me to switch off?". Only a plain yes, or the command again,
+# switches off; anything else keeps the device on.
+_YES_WORD = re.compile(r"^(yes|yeah|yep|yup|haan|haa|han|हाँ|हां|हा)$", re.IGNORECASE)
+_YES_CORE = re.compile(
+    r"^((ji |जी )?(haan|haa|han|हाँ|हां|हा)( ji| जी)?|yep|yup|sure|of course|confirm|do it|go ahead|"
+    r"please do|ज़रूर|जरूर|बिल्कुल|कर दो|कर दीजिए)(\s+please)?$",
+    re.IGNORECASE,
+)
+_NO_WORD = re.compile(r"^(no|nope|not|don'?t|do not|nahi|nahin|nahi?n|नहीं|नही|मत|ना|रुको|रुकिए|wait|cancel)$",
+                      re.IGNORECASE)
+POWEROFF_CONFIRM_SECONDS = 20
 # Words said around a command, as in "Okay, new topic now" or "अच्छा, दोबारा बोलो".
 _LEADING = re.compile(
     r"^\W*(ok(ay)?|alright|all right|right|so|well|hmm+|um+|uh+|yes|yeah|now|please|"
@@ -70,6 +103,14 @@ RESET_REPLY = {"en": "Okay, new topic. What would you like to ask?",
                "hi": "ठीक है, नया विषय। आप क्या पूछना चाहेंगे?"}
 CLOSE_REPLY = {"en": "Okay. Ask me whenever you have another question.",
                "hi": "ठीक है। जब अगला सवाल हो, पूछ लीजिए।"}
+POWEROFF_ASK_REPLY = {"en": "Do you want me to switch off? Say yes to switch off, or no to stay on.",
+                      "hi": "क्या मैं बंद हो जाऊँ? बंद करने के लिए हाँ कहिए, या चालू रखने के लिए नहीं कहिए।"}
+STAY_ON_REPLY = {"en": "Okay, I'll stay on.",
+                 "hi": "ठीक है, मैं चालू रहूँगा।"}
+POWEROFF_REPLY = {"en": "Switching off. Wait for the fan to stop before you unplug me.",
+                  "hi": "मैं बंद हो रहा हूँ। पंखा रुकने के बाद ही मेरा प्लग निकालिए।"}
+POWEROFF_FAILED_REPLY = {"en": "Sorry, I could not switch off. I'll stay on.",
+                         "hi": "माफ़ कीजिए, मैं बंद नहीं हो पाया। मैं चालू रहूँगा।"}
 
 
 def _strip_filler(clause: str) -> str:
@@ -88,8 +129,8 @@ def _clauses(text: str) -> List[str]:
 def parse_command(text: str):
     """What the whole utterance asks for, with any question said after a topic change.
 
-    Returns (kind, rest). kind is "reset", "close", "repeat", "slower", "ack" (only filler,
-    such as "okay"), or None for an ordinary question. rest is the question said after
+    Returns (kind, rest). kind is "reset", "close", "poweroff", "repeat", "slower", "ack"
+    (only filler, such as "okay"), or None for an ordinary question. rest is the question said after
     "new topic", as in "New topic. What is friction?", else "".
     """
     kinds = []
@@ -102,6 +143,8 @@ def parse_command(text: str):
             kinds.append("reset")
         elif _CLOSE.match(core):
             kinds.append("close")
+        elif _POWEROFF.match(core):
+            kinds.append("poweroff")
         elif _SLOWER.match(core):
             kinds.append("slower")
         elif _REPEAT.match(core):
@@ -117,9 +160,34 @@ def parse_command(text: str):
         return "reset", ""
     if found == {"close"}:
         return "close", ""
+    if "poweroff" in found and found <= {"poweroff", "close"}:  # "That's all, switch off"
+        return "poweroff", ""
     if len(found) == 1:
         return found.pop(), ""
     return None, ""
+
+
+def _words(text: str) -> List[str]:
+    return re.findall(r"[\w\u0900-\u097F']+", (text or "").lower())
+
+
+def is_confirmation(text: str) -> bool:
+    """True when the utterance is a plain yes ("yes please", "हाँ जी") or asks to switch off
+    again ("ok switch off", "हाँ, बंद करो"). A no, a question or anything else is False."""
+    if parse_command(text)[0] == "poweroff":
+        return True
+    if any(_NO_WORD.match(w) for w in _words(text)):
+        return False
+    clauses = _clauses(text)
+    said_yes = False
+    for clause in clauses:
+        core = _strip_filler(clause)
+        if core and not _YES_CORE.match(core):
+            return False
+        said_yes = said_yes or bool(core) or any(_YES_WORD.match(w) for w in _words(clause))
+    return said_yes
+
+
 # Whole-utterance commands only, so "Why is the sky blue again?" is still a question.
 _PLEASE = r"(please\s+|कृपया\s+)?"
 _REPEAT = re.compile(
@@ -180,6 +248,9 @@ class Session:
         # topic revised, so "now do the same for class 8" knows what to revise.
         self.grade: Optional[int] = None
         self.revision_topic: Optional[str] = None
+        # When the device asked "Do you want me to switch off?", or None. The next
+        # utterance answers it (see answer_poweroff).
+        self.pending_poweroff: Optional[float] = None
 
     @staticmethod
     def is_reset(text: str) -> bool:
@@ -203,6 +274,30 @@ class Session:
         self.covered, self.pending_lesson = None, False
         self.quiz, self.pending_quiz = None, False
         self.grade, self.revision_topic = None, None
+        self.pending_poweroff = None
+
+    def ask_poweroff(self) -> None:
+        """The device has just asked whether to switch off. Call after the question is spoken."""
+        self.pending_poweroff = self.clock()
+
+    def answer_poweroff(self, text: str, now: Optional[float] = None) -> Optional[str]:
+        """Decide a pending switch-off with the utterance that follows it.
+
+        Returns "confirm" for a yes within POWEROFF_CONFIRM_SECONDS, "cancel" for anything
+        else (that utterance is not answered as a question), or None when nothing is pending.
+        ``now`` is when the reply started (when recording began), defaulting to the clock.
+        Once the time has passed, a late yes is told the device is staying on, and anything
+        else is a new turn as usual: a question is answered and "switch off" asks again.
+        """
+        if self.pending_poweroff is None:
+            return None
+        asked, self.pending_poweroff = self.pending_poweroff, None
+        now = self.clock() if now is None else now
+        if now - asked <= POWEROFF_CONFIRM_SECONDS:
+            return "confirm" if is_confirmation(text) else "cancel"
+        if parse_command(text)[0] != "poweroff" and is_confirmation(text):
+            return "cancel"
+        return None
 
     def keep_last(self, results) -> None:
         """Keep what was just said, so it can be repeated. Call after the answer is spoken."""

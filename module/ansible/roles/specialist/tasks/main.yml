@@ -668,6 +668,30 @@
     - specialist_screen | bool
     - specialist_screen_pins is changed
 
+# Switching off by voice. The service has no login session, so logind's polkit rule for
+# power-off would ask for a password; a sudoers rule for this one command works anywhere.
+- name: Let the voice loop switch the device off
+  tags: [app, boot, screen]
+  become: true
+  ansible.builtin.copy:
+    content: |
+      # Managed by the Specialist Ansible role. "Switch off" by voice, then a spoken yes.
+      {{ specialist_user }} ALL=(root) NOPASSWD: /usr/bin/systemctl poweroff
+    dest: /etc/sudoers.d/specialist-poweroff
+    owner: root
+    group: root
+    mode: "0440"
+    validate: /usr/sbin/visudo -cf %s
+  when: specialist_voice_poweroff | bool
+
+- name: Remove the switch-off permission
+  tags: [app, boot, screen]
+  become: true
+  ansible.builtin.file:
+    path: /etc/sudoers.d/specialist-poweroff
+    state: absent
+  when: not (specialist_voice_poweroff | bool)
+
 - name: Install the voice loop service
   tags: [boot, screen]
   become: true

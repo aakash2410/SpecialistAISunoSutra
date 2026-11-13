@@ -75,7 +75,7 @@ The diagram at the top shows the whole device. Every request takes the same firs
 
 1. **Tap and speak:** a tap on the screen starts recording and another stops it. Enter on a USB keyboard works too, and recording stops itself after 30 seconds. A page photo or typed text can stand in for speech.
 2. **Language:** a small language ID model and Whisper's confidence decide whether speech is Hindi or English, so nobody sets it. The answer comes back in the same language unless the question names one.
-3. **Spoken commands:** "repeat that", "slower", "new topic" and "that's all", and their Hindi forms, are handled at once from memory, through filler words such as "okay", "now", "अच्छा" or "अब". "New topic. What is friction?" clears the conversation and answers the new question.
+3. **Spoken commands:** "repeat that", "slower", "new topic", "that's all" and "switch off", and their Hindi forms, are handled at once from memory, through filler words such as "okay", "now", "अच्छा" or "अब". "New topic. What is friction?" clears the conversation and answers the new question. "Switch off" (or "बंद हो जाओ") asks "Do you want me to switch off?", and only a yes within 20 seconds shuts the device down.
 4. **Translate:** a Hindi request becomes English, with a glossary fixing subject terms first.
 5. **Safety check:** a flagged request gets a fixed, hand-written reply and never reaches the answer model.
 6. **Mode:** a lesson plan, a revision, a quiz, or a doubt. A follow-up is rewritten from the last 3 turns first.
@@ -88,7 +88,7 @@ The diagram at the top shows the whole device. Every request takes the same firs
 
 **Memory** stays in RAM: the last 3 turns, what the class covered, the quiz in progress and the class being revised. It clears after 3 minutes of silence, on "new topic" or "that's all", after any safety flag and at reboot. Nothing about students is stored.
 
-**The screen** has a coloured bar for the state: blue "tap to ask", red "listening", amber "thinking", green "answer", grey "not in the textbooks". Below it come the question as heard and the answer as it is spoken, with examples in blue. The answer stays up until the next question, and "repeat that" puts it back. If the screen is missing or fails, the device carries on with voice only.
+**The screen** has a coloured bar for the state: blue "tap to ask", red "listening", amber "thinking", green "answer", grey "not in the textbooks", purple "switching off". Below it come the question as heard and the answer as it is spoken, with examples in blue. The answer stays up until the next question, and "repeat that" puts it back. If the screen is missing or fails, the device carries on with voice only.
 
 **Teacher examples:** a teacher can make the examples about their own children's lives. They fill in a plain text file, `data/teacher_examples.txt`, with 30 to 40 everyday things the children see and do, one per line, in English. The lines come from a trusted adult, so they get their own safety check: patterns for harm, then the safety model, whose flag counts only if the line has a word such as a person, a body part, fire or a blade, or if the check on children's questions also flags it. On 288 everyday lines it kept 269. On 185 harmful lines it blocked 175, and on the last 25, written after the check was finished, it blocked 18, so someone should still read the list before installing it. For each explanation, e5 finds up to three lines close to the topic, and Qwen uses one only if it really is a case of a kept sentence. Otherwise the example comes from village life as before. A name the teacher wrote, such as Holi or the haat's village, is allowed. How to install a returned file is in [module/README.md](module/README.md).
 
@@ -150,7 +150,6 @@ A student asks in Hindi or English and hears the answer in the same language. A 
 - A misheard word is caught only when it is in no textbook. "Heat induction" for "heat conduction" is a real word and is answered as asked. In Hindi, the offered word is machine translated.
 - 53 books titled "Lesson Plan", 373 passages, are still in the index. Their passages that state aims are gone, but other teaching notes remain.
 - Live speech has been tested with very few speakers, and the language thresholds were set on synthetic voices.
-- There is no way for a teacher to switch the device off safely from the screen or by voice yet. Use `sudo poweroff`, wait for the fan to stop, then unplug.
 
 ## Decisions
 
@@ -172,6 +171,7 @@ A student asks in Hindi or English and hears the answer in the same language. A 
 | Class progress tracking | Not in v1. Nothing about students is stored |
 | Memory | In RAM only. Clears after 3 minutes, on "new topic" or "that's all", after a safety flag and at reboot. Per-grade memory for a whole class is not in v1 |
 | Ending a conversation | "That's all", "thank you", "stop", "बस" or "धन्यवाद" clears memory and says a short goodbye. "Okay" on its own is skipped, except during a quiz |
+| Switching off | By voice with a spoken yes: "switch off", "shut down", "बंद हो जाओ" or "switch off karo", then "yes" or "हाँ" within 20 seconds. Anything else keeps it on. The device says to wait for the fan to stop before unplugging, shows it on the screen, then runs `systemctl poweroff`. Pulling the plug while it runs can corrupt its storage, and a teacher has no laptop for `sudo poweroff`. The yes stops a misheard "बंद करो" or a question about switching a light off from shutting it down |
 | Students using it alone (journeys 3 and 4) | Not until a safeguarding reviewer has approved the safety replies and helpline numbers. Until then, a teacher is present |
 | Talk button | A tap on the 2.8 inch touch screen. Enter on a USB keyboard is the backup. No separate touch sensor |
 | Screen | The Waveshare 2.8 inch touch LCD shows the state, the question and the answer. The device works without it |

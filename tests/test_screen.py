@@ -124,3 +124,27 @@ def test_screen_trigger_needs_the_screen_and_a_joined_list_skips_it():
         make_trigger("screen")
     # key needs no hardware to construct, so key,screen falls back to key alone.
     assert make_trigger("key,screen").name == "key"
+
+
+def test_switching_off_shows_the_goodbye_and_flush_waits_for_it():
+    panel = FakePanel()
+    ui = screen.ScreenUI(panel, touch=None)
+    ui.heard("Yes")
+    ui.switching_off("Switching off. Wait for the fan to stop before you unplug me.")
+    assert ui.flush(timeout=3.0)
+    assert ui.state == "poweroff" and ui.question == ""
+    assert ui.answer == [("Switching off. Wait for the fan to stop before you unplug me.", False)]
+    drawn = len(panel.frames)
+    ui.close()
+    assert drawn and panel.frames, "the goodbye was not drawn"
+    assert screen.LABELS["poweroff"]["hi"] and screen.BAR["poweroff"]
+
+
+def test_an_error_can_say_what_went_wrong():
+    ui = screen.ScreenUI(FakePanel(), touch=None)
+    ui.sentence("Roots take in water.")
+    ui.error()
+    assert ui.state == "error" and ui.answer  # the answer stays when nothing is said
+    ui.error("Sorry, I could not switch off. I'll stay on.")
+    assert ui.answer == [("Sorry, I could not switch off. I'll stay on.", False)]
+    ui.close()

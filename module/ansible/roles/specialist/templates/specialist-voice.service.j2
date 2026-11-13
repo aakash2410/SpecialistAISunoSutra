@@ -17,6 +17,12 @@ Environment=SPECIALIST_SCREEN_ROTATION={{ specialist_screen_rotation }}
 {% else %}
 Environment=SPECIALIST_TRIGGER={{ specialist_trigger }}
 {% endif %}
+{% if specialist_voice_poweroff | bool %}
+# "Switch off", then a spoken yes, runs sudo -n /usr/bin/systemctl poweroff, which
+# /etc/sudoers.d/specialist-poweroff allows. Only this service may switch the device off.
+# sudo needs setuid, so do not add NoNewPrivileges=yes or a hardening option that implies it.
+Environment=SPECIALIST_ALLOW_POWEROFF=1
+{% endif %}
 {% if specialist_gpio_chip %}
 Environment=SPECIALIST_GPIO_CHIP={{ specialist_gpio_chip }}
 Environment=SPECIALIST_GPIO_LINE={{ specialist_gpio_line }}

@@ -10,8 +10,8 @@ Two setup steps on the Jetson, both done by the install with -e specialist_scree
 spi1 turned on with jetson-io, and pins 29, 31 and 32 allowed to drive (JetPack 6 leaves
 them off; see tools/screen_pins.sh).
 
-It shows a coloured bar with the state (tap to ask, listening, thinking, answer) and,
-below it, the question as heard and the answer as it is spoken. The answer stays on the
+It shows a coloured bar with the state (tap to ask, listening, thinking, answer, switching
+off) and, below it, the question as heard and the answer as it is spoken. The answer stays on the
 screen until the next question, so a teacher can read it again. Tapping anywhere starts
 and stops recording, like the talk button.
 
@@ -232,7 +232,8 @@ DEVANAGARI_FONTS = ["/usr/share/fonts/truetype/lohit-devanagari/Lohit-Devanagari
 BACKGROUND = (12, 14, 20)
 TEXT, QUESTION, EXAMPLE = (240, 240, 240), (150, 160, 175), (120, 210, 230)
 BAR = {"ready": (35, 95, 200), "listening": (200, 45, 45), "thinking": (215, 145, 25),
-       "answer": (35, 140, 75), "refused": (95, 95, 105), "error": (150, 30, 30)}
+       "answer": (35, 140, 75), "refused": (95, 95, 105), "error": (150, 30, 30),
+       "poweroff": (110, 60, 160)}
 LABELS = {
     "ready":     {"en": "Tap to ask",             "hi": "पूछने के लिए छुएँ"},
     "ready_key": {"en": "Press the button to ask", "hi": "पूछने के लिए बटन दबाएँ"},
@@ -241,6 +242,7 @@ LABELS = {
     "answer":    {"en": "Answer",                 "hi": "उत्तर"},
     "refused":   {"en": "Not in the textbooks",   "hi": "किताबों में नहीं है"},
     "error":     {"en": "Something went wrong. Ask again", "hi": "कुछ गड़बड़ हुई। फिर से पूछिए"},
+    "poweroff":  {"en": "Switching off",          "hi": "बंद हो रहा है"},
 }
 
 
@@ -359,6 +361,7 @@ class ScreenUI:
         self.state, self.question, self.answer, self.note = "ready", "", [], ""
         self._lock = threading.Lock()
         self._dirty = threading.Event()
+        self._drawn = threading.Event()  # set when the newest state is on the screen
         self._stop = False
         self._thread = threading.Thread(target=self._draw_loop, name="screen", daemon=True)
         self._thread.start()
@@ -386,8 +389,20 @@ class ScreenUI:
                 self.answer = self.answer + [(text, False)]
         self._set(state="refused", lang=lang or self.lang)
 
-    def error(self) -> None:
-        self._set(state="error")
+    def error(self, text: str = "", lang: Optional[str] = None) -> None:
+        """Something failed. With text, that is shown in place of the answer."""
+        if text:
+            self._set(state="error", question="", answer=[(text, False)], note="", lang=lang or self.lang)
+        else:
+            self._set(state="error")
+
+    def switching_off(self, text: str, lang: Optional[str] = None) -> None:
+        """The goodbye before the device switches off. It stays on the screen afterwards."""
+        self._set(state="poweroff", question="", answer=[(text, False)], note="", lang=lang or self.lang)
+
+    def flush(self, timeout: float = 3.0) -> bool:
+        """Wait until the newest state has been drawn. False if that took too long."""
+        return self._drawn.wait(timeout)
 
     def show_answer(self, sentences: List[str], lang: Optional[str] = None) -> None:
         """A repeated answer."""
@@ -402,6 +417,7 @@ class ScreenUI:
         with self._lock:
             for key, value in changes.items():
                 setattr(self, key, value)
+            self._drawn.clear()
         self._dirty.set()
 
     def _draw_loop(self) -> None:
@@ -419,6 +435,8 @@ class ScreenUI:
             except Exception:  # noqa: BLE001  the screen must never stop the voice loop
                 logger.exception("could not draw the screen")
                 time.sleep(1.0)
+            if not self._dirty.is_set():  # nothing newer arrived while drawing
+                self._drawn.set()
             if self._stop:
                 return
 
@@ -486,6 +504,7 @@ def _demo() -> None:
         (ui.heard, ("प्रकाश संश्लेषण क्या है?", "hi")),
         (ui.sentence, ("प्रकाश संश्लेषण वह क्रिया है जिससे हरे पौधे सूर्य के प्रकाश से अपना भोजन बनाते हैं।", False, "hi")),
         (ui.refused, ("I can only answer from the textbooks.",)),
+        (ui.switching_off, ("Switching off. Wait for the fan to stop before you unplug me.",)),
     ]
     for step, args in steps:
         print(step.__name__, *args)

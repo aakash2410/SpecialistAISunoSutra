@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import subprocess
 import sys
 import time
 
@@ -46,6 +47,41 @@ DEFAULT_INDEX = _resolve_index()
 
 def _fmt_timings(t: dict) -> str:
     return ", ".join(f"{k}={v*1000:.0f}ms" for k, v in t.items() if v is not None)
+
+
+# Switching off by voice. Only the systemd service sets this, so a run by hand, the tests,
+# the journey runner and a Mac never switch the computer off.
+ALLOW_POWEROFF_ENV = "SPECIALIST_ALLOW_POWEROFF"
+# The Ansible role's sudoers drop-in allows exactly this command without a password.
+POWEROFF_COMMAND = ["/usr/bin/systemctl", "poweroff"]
+POWEROFF_TIMEOUT_SECONDS = 30
+# After systemd has accepted the switch-off it stops this service within seconds. If it
+# has not after this long, the device says it could not switch off.
+SHUTDOWN_WAIT_SECONDS = 90
+
+
+def power_off():
+    """Ask systemd to switch the device off.
+
+    Returns None when switching off is not allowed here ($SPECIALIST_ALLOW_POWEROFF is not
+    1), True when systemd accepted it, and False when it failed.
+    """
+    if os.environ.get(ALLOW_POWEROFF_ENV) != "1":
+        print(f"[power] would switch off now ({ALLOW_POWEROFF_ENV}=1 is not set, so staying on)")
+        return None
+    cmd = list(POWEROFF_COMMAND)
+    if os.geteuid() != 0:
+        cmd = ["/usr/bin/sudo", "-n"] + cmd  # -n: fail at once rather than wait for a password
+    print(f"[power] switching off: {' '.join(cmd)}")
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=POWEROFF_TIMEOUT_SECONDS)
+    except (OSError, subprocess.SubprocessError) as e:
+        logging.error("could not switch off: %s", e)
+        return False
+    if r.returncode != 0:
+        logging.error("could not switch off (exit %s): %s", r.returncode, (r.stderr or r.stdout).strip())
+        return False
+    return True
 
 
 class LoopHarness:
@@ -227,12 +263,18 @@ class LoopHarness:
     NOTHING_TO_REPEAT = {"en": "There is nothing to repeat yet. Please ask a question.",
                          "hi": "अभी दोहराने के लिए कुछ नहीं है। कृपया एक सवाल पूछिए।"}
 
-    def _say(self, replies: dict) -> None:
-        """Speak and show one fixed reply, in the answer's language."""
+    def _say(self, replies: dict, state: str = "answer") -> None:
+        """Speak and show one fixed reply, in the answer's language. Returns when it has
+        been spoken. state is how the screen shows it: answer, poweroff or error."""
         text = replies.get(self.turn_out, replies["en"])
         print(f"   · {text}")
         if self.screen:
-            self.screen.show_answer([text], self.turn_out)
+            if state == "poweroff":
+                self.screen.switching_off(text, self.turn_out)
+            elif state == "error":
+                self.screen.error(text, self.turn_out)
+            else:
+                self.screen.show_answer([text], self.turn_out)
         if self.tts_provider is not None:
             from local.audio import play_wav_bytes
 
@@ -241,7 +283,8 @@ class LoopHarness:
     def _handle_command(self, text: str):
         """Act on a spoken command. Returns True when handled, the question said after
         "new topic" when there is one, or None for an ordinary question."""
-        from pocketinfer.specialist.session import CLOSE_REPLY, RESET_REPLY, parse_command
+        from pocketinfer.specialist.session import (CLOSE_REPLY, POWEROFF_ASK_REPLY, RESET_REPLY,
+                                                    parse_command)
 
         kind, rest = parse_command(text)
         if kind == "reset":
@@ -256,6 +299,12 @@ class LoopHarness:
             print("[session] finished, earlier questions forgotten")
             self._say(CLOSE_REPLY)
             return True
+        if kind == "poweroff":
+            self._say(POWEROFF_ASK_REPLY)
+            # Timed from when the question has been spoken, so the 20 seconds are all for the reply.
+            self.session.ask_poweroff()
+            print("[power] asked to switch off, waiting for a yes")
+            return True
         if kind in ("repeat", "slower"):
             return self._replay(kind)
         if kind == "ack" and not self.session.mid_activity:
@@ -265,6 +314,42 @@ class LoopHarness:
                 self.screen.ready()
             return True
         return None
+
+    def _answer_poweroff(self, text: str, started: float) -> bool:
+        """When the device has just asked "Do you want me to switch off?", act on the reply.
+        Returns True when the utterance was that reply, so it is not answered as a question."""
+        from pocketinfer.specialist.session import STAY_ON_REPLY
+
+        decision = self.session.answer_poweroff(text, now=started)
+        if decision is None:
+            return False
+        if decision == "cancel":
+            print("[power] no yes, staying on")
+            self._say(STAY_ON_REPLY)
+            return True
+        self._switch_off()
+        return True
+
+    def _switch_off(self) -> None:
+        """Say and show the goodbye, wait for it to be spoken, then switch off."""
+        from pocketinfer.specialist.session import POWEROFF_FAILED_REPLY, POWEROFF_REPLY
+
+        print("[power] yes, switching off")
+        self.session.clear()
+        self._say(POWEROFF_REPLY, state="poweroff")  # returns once the speech has played
+        if self.screen:
+            self.screen.flush()  # the goodbye is on the screen before anything stops
+        done = power_off()
+        if done is None:
+            return
+        if done:
+            # The last frame stays on the screen while the device shuts down.
+            if self.screen:
+                self.screen.close()
+                self.screen = None
+            time.sleep(SHUTDOWN_WAIT_SECONDS)  # systemd stops this service well before
+            logging.error("still running %ss after asking to switch off", SHUTDOWN_WAIT_SECONDS)
+        self._say(POWEROFF_FAILED_REPLY, state="error")
 
     def _replay(self, command: str) -> bool:
         """Say the last answer again, slower and with pauses if asked, without asking again."""
@@ -296,6 +381,10 @@ class LoopHarness:
         T = {}
         t0 = time.time()
         ts = time.time()
+        # When this request began: now for text, a page or a WAV, and for the live mic when
+        # the talk button started recording (see _mic_state). A reply to "Do you want me to
+        # switch off?" counts if it began in time, however long it takes to transcribe.
+        self._listening_at = self.session.clock()
         screen = self.screen
         if screen and mic is None:  # typed text or a page: no listening step
             screen.listening()
@@ -309,6 +398,9 @@ class LoopHarness:
         if screen:
             screen.heard(raw, self.turn_in)
         self._choose_output(raw)
+        # The device has just asked "Do you want me to switch off?": this utterance is the reply.
+        if self._answer_poweroff(raw, self._listening_at):
+            return True
         # Checked before translation, so a Hindi "दोबारा बोलो" or "बस" acts at once.
         handled = self._handle_command(raw)
         if handled is True:
@@ -412,6 +504,8 @@ class LoopHarness:
                 self.screen.close()
 
     def _mic_state(self, state: str) -> None:
+        if state == "listening":
+            self._listening_at = self.session.clock()
         if not self.screen:
             return
         if state == "waiting":

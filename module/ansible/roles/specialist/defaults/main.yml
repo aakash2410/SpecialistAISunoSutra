@@ -100,3 +100,8 @@ specialist_gpio_line: ""
 # landscape; use the other one if the text is upside down.
 specialist_screen: false
 specialist_screen_rotation: 90
+# A teacher can say "switch off" (or "बंद हो जाओ"), then yes, and the device shuts down
+# cleanly. This lets the voice loop's user run exactly "systemctl poweroff" through sudo
+# without a password (/etc/sudoers.d/specialist-poweroff). Set to false to turn it off;
+# the device then says it is switching off but stays on.
+specialist_voice_poweroff: true

@@ -26,6 +26,7 @@ Sizes are on disk. Measured from the files the module ships, except where marked
 | Hardware settings | `/etc/default/specialist` | |
 | Ollama memory settings | `/etc/systemd/system/ollama.service.d/specialist.conf` | |
 | Camera rules | `/etc/udev/rules.d/99-specialist-devices.rules` | |
+| Permission to switch off by voice | `/etc/sudoers.d/specialist-poweroff` | |
 | Boot check | `specialist-boot-check` service | |
 | Voice loop at boot | `specialist-voice` service, started by the talk button | |
 
@@ -227,6 +228,10 @@ specialist-voice --in-lang en --out-lang en --from-image page.jpg
 
 Saying "repeat that" or "दोबारा बोलो" plays the last answer again. Saying "slower" or "धीरे बोलो" plays it at 80% speed, with a pause after each sentence for writing it down. Neither asks the question again. Saying "new topic", "change the topic" or "विषय बदलो" clears the conversation and asks for the next question; "New topic. What is friction?" clears it and answers. Saying "that's all", "thank you", "stop", "बस" or "धन्यवाद" clears it and says a short goodbye. Words like "okay", "now", "please", "अच्छा" and "अब" around a command are ignored, and "okay" on its own is skipped, except during a quiz.
 
+Saying "switch off", "shut down", "बंद हो जाओ", "स्विच ऑफ़" or "switch off karo" asks "Do you want me to switch off?". Only the very next thing said counts: "yes", "हाँ" or "switch off" again within 20 seconds, and the device says "Switching off. Wait for the fan to stop before you unplug me.", shows it on the screen, then shuts down. Anything else gets "Okay, I'll stay on." and is not answered as a question. A question about switching something else off, such as "What happens when you switch off the light?", is answered as usual.
+
+Only the `specialist-voice` service switches off: it sets `SPECIALIST_ALLOW_POWEROFF=1`, and the install adds `/etc/sudoers.d/specialist-poweroff`, which lets the service user run exactly `/usr/bin/systemctl poweroff` without a password. Run by hand, in tests or on a Mac, the voice loop prints "would switch off now" and stays on. The service has no login session, so logind's polkit rule would ask for a password, which is why this uses sudo. To turn it off, install with `-e specialist_voice_poweroff=false --tags app,screen`.
+
 ## The talk button
 
 At boot the voice loop starts as the `specialist-voice` service. It doesn't use the terminal, so press the talk button to start recording and again to stop. A rising beep means it's listening, and a falling beep means it stopped. Recording stops by itself after 30 seconds.
@@ -238,7 +243,7 @@ At boot the voice loop starts as the `specialist-voice` service. It doesn't use 
 
 ## The screen
 
-The Waveshare 2.8 inch resistive touch LCD (ST7789 display, XPT2046 touch) is optional. It sits on spi1 of the 40-pin header. It shows a coloured bar with the state: tap to ask, listening, thinking, answer, or not in the textbooks. Below the bar it shows the question as heard and the answer, sentence by sentence as it is spoken. The model's own examples appear in blue. The answer stays up until the next question. If the screen is missing or fails, the voice loop carries on with voice only.
+The Waveshare 2.8 inch resistive touch LCD (ST7789 display, XPT2046 touch) is optional. It sits on spi1 of the 40-pin header. It shows a coloured bar with the state: tap to ask, listening, thinking, answer, not in the textbooks, or switching off. Below the bar it shows the question as heard and the answer, sentence by sentence as it is spoken. The model's own examples appear in blue. The answer stays up until the next question. If the screen is missing or fails, the voice loop carries on with voice only.
 
 Wiring, with the Jetson off (the Jetson's header pin numbers):
 
@@ -313,7 +318,7 @@ sudo systemctl disable --now specialist-voice bhashini_models specialist-boot-ch
 ```
 
 ```bash
-sudo rm -rf /opt/specialist /usr/local/bin/specialist-voice /usr/local/bin/specialist-boot-check /usr/local/bin/specialist-usb-power /etc/default/specialist /etc/udev/rules.d/99-specialist-devices.rules /etc/systemd/system/bhashini_models.service /etc/systemd/system/specialist-boot-check.service /etc/systemd/system/specialist-voice.service /etc/systemd/system/ollama.service.d/specialist.conf
+sudo rm -rf /opt/specialist /usr/local/bin/specialist-voice /usr/local/bin/specialist-boot-check /usr/local/bin/specialist-usb-power /etc/default/specialist /etc/udev/rules.d/99-specialist-devices.rules /etc/systemd/system/bhashini_models.service /etc/systemd/system/specialist-boot-check.service /etc/systemd/system/specialist-voice.service /etc/systemd/system/ollama.service.d/specialist.conf /etc/sudoers.d/specialist-poweroff
 ```
 
 Ollama and the system packages stay installed.
