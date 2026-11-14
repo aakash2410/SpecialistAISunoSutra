@@ -23,7 +23,7 @@ This sprint turned a question-answering box into a classroom assistant that cove
 - **It works out the language itself.** A small language ID model and Whisper's confidence decide Hindi or English for every question. Nobody sets anything, and the answer comes back in the language you asked in.
 - **Teachers get lesson plans.** Tell it what the class covered yesterday and ask for tomorrow's plan. It gives a recap, the key ideas, a simpler version for students who need more help, a question to check understanding and one to stretch students who are ahead. The questions get quoted from the textbook, never invented.
 - **Students get a quiz.** Questions come straight from the textbook. Every spoken answer gets checked against it, and a wrong answer hears the checked textbook explanation. No scores get kept.
-- **Multi-grade classes get revision by class.** "Revise force with class 6", then "now do the same for class 8", draws on each class's own books.
+- **Multi-grade classes get revision by class.** "I just taught class 7 science, photosynthesis. Please revise it with the students", then "now do the same for class 8", searches each class's own books first. It is not reliable yet: all three revision scripts failed on the Mac (see [Journeys](#journeys)).
 - **Examples come from the children's own lives.** After an explanation, the device adds one example from village life. Teachers can hand it their own list of 30 to 40 everyday examples to draw from. Every example gets checked: it must show a textbook fact and add nothing new.
 - **Three classes of science, one open licence.** The index covers Class 6 to 8 science: 42,426 passages from 1,499 books, all CC BY 4.0, with teacher's handbooks and lesson aims taken out. It answers 21 of 22 science questions and refuses 28 of 30 off-topic ones.
 - **A screen you tap to talk.** A 2.8 inch touch screen shows whether the device is listening or thinking, then the question as heard and the answer sentence by sentence, in Hindi or English. A tap starts and stops recording.
@@ -35,7 +35,7 @@ We also tested a bigger answer model, Qwen3.5-2B, and kept Qwen2.5-1.5B. The sma
 
 ## Status, 12 November 2026
 
-The full loop runs on the Jetson Orin Nano with the network off: tap the screen, ask in Hindi or English, and hear and read the answer. The screen, tap to talk, topic changes and the way to end were tested on the device today. The lesson-aim and misheard-word fixes, the new index and the Hindi journey run are tested on the Mac only; the next install brings them to the Jetson. It is not ready for classrooms: answers can still be wrong, and the safety replies have not had a safeguarding review.
+The full loop runs on the Jetson Orin Nano with the network off: tap the screen, ask in Hindi or English, and hear and read the answer. The screen, tap to talk, topic changes and the way to end were tested on the device today. The lesson-aim and misheard-word fixes and the new index are tested on the Mac only; the next install brings them to the Jetson. The journeys have been run in English on the Mac only. The Hindi journeys need Bhashini, so they have not been run yet and wait for the Jetson. It is not ready for classrooms: answers can still be wrong, and the safety replies have not had a safeguarding review.
 
 ### Journeys
 
@@ -60,7 +60,7 @@ Each journey has its own diagram under [The four journeys](#the-four-journeys). 
 | Class 6 to 8 science index, CC BY 4.0 | Done. 42,426 passages from 1,499 books at the 0.80 search score. Science 21 of 22 answered, off-topic 28 of 30 refused (see [ingest/README.md](ingest/README.md)) | 0 |
 | Lesson aims read out as answers, and a misheard word | Done on the Mac. Teacher's handbooks and passages that state lesson aims are out of the index (4,512 passages), and the answer check drops a sentence such as "Students will …". "Tell me about the heat endaction" gets "Did you mean heat conduction? Please ask again." Benchmark unchanged | 0 |
 | Spoken commands: repeat, slower, new topic, finish | Done and tested on the Jetson. Heard through filler words in both languages | 0 |
-| Screen and tap to talk | Done and tested on the Jetson. ST7789 display and touch on spi1, installed with `-e specialist_screen=true` | 0 |
+| Screen and tap to talk | Done and tested on the Jetson. ST7789 display and touch on spi1, turned on by `specialist_screen=true` in the device's inventory, so every install keeps it | 0 |
 | Answer model | Decided: Qwen2.5-1.5B stays. Qwen3.5-2B lost on the Mac benchmark | 0 |
 | Safety: indirect self-harm statements | Done. Holdout 13 of 14 caught, no new false alarms | 0 |
 | Wrong answers: Edison and the telephone, "how do I cook food" | Done. A credit for an invention must be in the passage, and everyday how-to requests are refused | 0 |
@@ -147,7 +147,7 @@ A student asks in Hindi or English and hears the answer in the same language. A 
 | Page reading | Tesseract, Hindi and English | CPU |
 | Screen | `local/screen.py`: ST7789 display and XPT2046 touch over SPI, drawn with Pillow | CPU |
 
-**Tried and dropped:** Qwen3.5-2B (11 November: refused 27 of 30 off-topic against 29, answered 52 of 60 against 53, first sentence about 4 times slower, and more wrong facts and markdown got past the check), SmolLM3, `llama3.2:1b` (excluded by Mozilla's call), Pleias-RAG-1B (far slower, with basic errors), Kokoro (about 1 s slower), Piper's Rohan voice (stuttered in English, licence unclear), a separate TTP223 touch sensor (the screen is the talk button).
+**Tried and dropped:** Qwen3.5-2B (11 November, on the Class 7 index then in use: refused 27 of 30 off-topic against Qwen2.5-1.5B's 29, answered 52 of 60 against 53, first sentence about 4 times slower, and more wrong facts and markdown got past the check), SmolLM3, `llama3.2:1b` (excluded by Mozilla's call), Pleias-RAG-1B (far slower, with basic errors), Kokoro (about 1 s slower), Piper's Rohan voice (stuttered in English, licence unclear), a separate TTP223 touch sensor (the screen is the talk button).
 
 ## Known gaps
 
@@ -208,7 +208,7 @@ Finding a safeguarding reviewer runs alongside, since journeys 3 and 4 wait on i
 
 | Part | What we use |
 |---|---|
-| Computer | Jetson Orin Nano 8GB Super Developer Kit, 25 W mode |
+| Computer | Jetson Orin Nano 8GB Super Developer Kit, 25 W mode, set by hand once, since the install does not set it (see [Power mode](module/README.md#power-mode)) |
 | Power | The 19 V mains adapter, or a USB-C power bank (45 to 100 W, 15 V / 3 A, about 20,000 mAh, pass-through charging) through the ETZIN cable set to 15 V |
 | Microphone and camera | Arducam 8MP USB camera (B0292) |
 | Speaker | USB speaker |
@@ -219,12 +219,14 @@ Finding a safeguarding reviewer runs alongside, since journeys 3 and 4 wait on i
 
 Install steps are in [module/README.md](module/README.md). After the install, the loop starts at boot and the screen shows "Tap to ask". Tap the screen (or press Enter on a USB keyboard) to record, and tap again to stop.
 
-Things to say:
+Things to say. The lesson plan, the chlorophyll pair, the quiz, "repeat that" and "slower" passed the English journey run on the Mac. "What is photosynthesis?" is the install's own check, and the Hindi question, "new topic" and "that's all" were tried on the Jetson:
 - "What is photosynthesis?" or "प्रकाश संश्लेषण क्या है?"
 - "Give me a lesson plan on photosynthesis for tomorrow's class"
-- "Revise acids with class 7", then "now do the same for class 8"
-- "Quiz us on photosynthesis", then "stop the quiz"
+- "What is chlorophyll?", then "Why do leaves need it to make food?"
+- "We are class 7 science. Quiz us on photosynthesis", then "stop the quiz"
 - "Repeat that", "slower", "new topic", "that's all"
+
+Leave out revision by class, such as "Revise acids with class 7", then "now do the same for class 8". Journey 2 failed all three scripts, so it is not reliable yet.
 
 To run it by hand on the Jetson, stop the service first, then press Enter in the terminal to record:
 

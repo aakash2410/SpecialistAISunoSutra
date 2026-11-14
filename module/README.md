@@ -18,17 +18,18 @@ Sizes are on disk. Measured from the files the module ships, except where marked
 | Safety model, `nli-safety-onnx` | `/opt/specialist/models` | 181 MB |
 | Spoken language ID, `lang-id-ecapa-onnx` | `/opt/specialist/models` | 86 MB |
 | Reading pages, Tesseract with Hindi and English | System package | |
-| DIKSHA index, the one the voice loop uses | `/opt/specialist/corpus` | 21 MB for `diksha_g7_all` |
+| DIKSHA index, the one the voice loop uses | `/opt/specialist/corpus` | 107 MB for `diksha_g6_8_science`, 42,426 Class 6 to 8 science passages |
 | Teacher examples, blank until a teacher fills it in | `/opt/specialist/teacher_examples.txt` | |
 | Checked teacher examples, made at the first start after a new file | `/opt/specialist/cache` | under 1 MB |
 | Pipeline code and Python environment | `/opt/specialist/app`, `/opt/specialist/venv` | about 300 MB, an estimate |
 | Command to run it | `/usr/local/bin/specialist-voice` | |
+| Journey runner and its scripts, with the command to run them | `/opt/specialist/app/tests/journeys`, `/usr/local/bin/specialist-journeys` | under 1 MB |
 | Hardware settings | `/etc/default/specialist` | |
 | Ollama memory settings | `/etc/systemd/system/ollama.service.d/specialist.conf` | |
 | Camera rules | `/etc/udev/rules.d/99-specialist-devices.rules` | |
 | Permission to switch off by voice | `/etc/sudoers.d/specialist-poweroff` | |
 | Boot check | `specialist-boot-check` service | |
-| Voice loop at boot | `specialist-voice` service, started by the talk button | |
+| Voice loop at boot | `specialist-voice` service, started at boot. The talk button, or a tap on the screen, starts each recording | |
 
 The Specialist's Python environment holds six packages and what they bring with them: `numpy`, `requests`, `ollama`, `onnxruntime` (the CPU build), `tokenizers` and `faster-whisper`. The list is in `requirements-specialist.txt`. System packages go in without recommended extras, and pip keeps no download cache.
 
@@ -52,7 +53,7 @@ The first time only, make the inventory:
 cd "/Users/aakashsangani/Desktop/Suno-Sutra-SW/Specialist v1/dist/specialist-module/ansible" && cp inventory.ini.sample inventory.ini
 ```
 
-Set your device name and user in `inventory.ini`, then run:
+Set your device name and user in `inventory.ini`. If the device has the 2.8 inch touch screen, also uncomment the two `specialist_screen=true` lines at the end, so every install keeps the screen on (see [The screen](#the-screen)). Then run:
 
 ```bash
 ansible-playbook -i inventory.ini install_specialist.yml -K
@@ -60,11 +61,23 @@ ansible-playbook -i inventory.ini install_specialist.yml -K
 
 `-K` asks for the device's sudo password. The playbook is safe to re-run, because finished steps get skipped and downloads resume. It ends by asking test questions in English and Hindi, and it fails if the device does not cite a source, refuse an off-topic question or answer in Hindi.
 
-To update only the code after a change, which is the usual case, run this from the Mac:
+To update the code after a change, which is the usual case, run this from the Mac:
 
 ```bash
-cd "/Users/aakashsangani/Desktop/Suno-Sutra-SW/Specialist v1" && ./scripts/make_module.sh && cd dist/specialist-module/ansible && ansible-playbook -i inventory.ini install_specialist.yml -K --tags app,boot,verify
+cd "/Users/aakashsangani/Desktop/Suno-Sutra-SW/Specialist v1" && ./scripts/make_module.sh && cd dist/specialist-module/ansible && ansible-playbook -i inventory.ini install_specialist.yml -K --tags app,boot,screen,verify
 ```
+
+- `app` installs the code, the Python packages, `specialist-voice` and `specialist-journeys`.
+- `boot` and `screen` install the services and settings applied at every boot, the screen's setup when `specialist_screen` is on, and the voice loop service, then restart the voice loop so it runs the new code. Both rewrite the service from `specialist_screen`, so with the inventory line the screen stays on, and without it the screen goes off unless you add `-e specialist_screen=true`.
+- `verify` asks the test questions. It pauses the voice loop and starts it again at the end.
+
+When the index has changed as well, add `content`. That is after building a new index, or the first update since the device last got one, such as the move to the Class 6 to 8 index. `content` copies the index, about 107 MB, and removes any other index on the device. A code-only update leaves the old index in place:
+
+```bash
+cd "/Users/aakashsangani/Desktop/Suno-Sutra-SW/Specialist v1" && ./scripts/make_module.sh && cd dist/specialist-module/ansible && ansible-playbook -i inventory.ini install_specialist.yml -K --tags app,boot,screen,content,verify
+```
+
+The voice loop restarts before the index is copied, so keep `verify` in the same run: it stops the loop and starts it again after the new index is in. Without `verify`, restart it on the Jetson with `sudo systemctl restart specialist-voice`. A run with no `--tags` at all also works, and skips the steps already done.
 
 The first run after the memory settings below came in restarts Ollama and Bhashini once, so it takes a few minutes longer.
 
@@ -81,6 +94,7 @@ Change these in the inventory or with `-e`. The full list is in `ansible/roles/s
 | `specialist_assets_dir` | Reuse files you have already downloaded |
 | `specialist_voice_autostart` | Start the voice loop at boot. Set to `false` to run it only by hand |
 | `specialist_voice_in_lang`, `specialist_voice_out_lang` | The languages of the loop started at boot. `auto`, the default, works out each question's language and answers in it |
+| `specialist_screen` | Turn on the 2.8 inch touch screen. Off by default. Set it in the inventory for a device that has one. See [The screen](#the-screen) |
 | `specialist_trigger` | The talk button: `key` for any USB keyboard or keypad (Enter), or `gpio` for a touch sensor |
 | `specialist_gpio_chip`, `specialist_gpio_line` | With `gpio`, the chip and line the sensor's signal is wired to |
 | `specialist_ollama_env` | Ollama's memory settings. See [Memory](#memory) |
@@ -88,7 +102,7 @@ Change these in the inventory or with `-e`. The full list is in `ansible/roles/s
 | `specialist_headless` | Boot to the text console instead of the desktop. Off by default |
 | `specialist_prune_ollama_models` | Delete every Ollama model except `specialist_llm_model`. Off by default |
 
-To update only the syllabus:
+To update only the syllabus, then restart the voice loop on the Jetson with `sudo systemctl restart specialist-voice` so it reads the new index:
 
 ```bash
 ansible-playbook -i inventory.ini install_specialist.yml -K --tags content
@@ -226,6 +240,22 @@ specialist-voice --in-lang en --out-lang en --from-image page.jpg
 
 `--no-speak` prints the answer without playing it. Each answer prints how long every step took, under `[steps]`.
 
+To run the four scripted user journeys and write a pass or fail report, stop the voice loop service first to free memory, then start it again afterwards:
+
+```bash
+sudo systemctl stop specialist-voice
+```
+
+```bash
+specialist-journeys --lang hi --out ~/journeys_hi.md
+```
+
+```bash
+sudo systemctl start specialist-voice
+```
+
+`specialist-journeys` uses the same index, models, answer model and settings as the service, but it never switches the device off and does not use the screen. `--lang en` runs the English scripts, and `--journey J3` or `--variant J3-hi-a` runs part of them. More in [tests/README.md](../tests/README.md#user-journeys) in the repo.
+
 Saying "repeat that" or "दोबारा बोलो" plays the last answer again. Saying "slower" or "धीरे बोलो" plays it at 80% speed, with a pause after each sentence for writing it down. Neither asks the question again. Saying "new topic", "change the topic" or "विषय बदलो" clears the conversation and asks for the next question; "New topic. What is friction?" clears it and answers. Saying "that's all", "thank you", "stop", "बस" or "धन्यवाद" clears it and says a short goodbye. Words like "okay", "now", "please", "अच्छा" and "अब" around a command are ignored, and "okay" on its own is skipped, except during a quiz.
 
 Saying "switch off", "shut down", "बंद हो जाओ", "स्विच ऑफ़" or "switch off karo" asks "Do you want me to switch off?". Only the very next thing said counts: "yes", "हाँ" or "switch off" again within 20 seconds, and the device says "Switching off. Wait for the fan to stop before you unplug me.", shows it on the screen, then shuts down. Anything else gets "Okay, I'll stay on." and is not answered as a question. A question about switching something else off, such as "What happens when you switch off the light?", is answered as usual.
@@ -252,11 +282,20 @@ Wiring, with the Jetson off (the Jetson's header pin numbers):
 | Jetson pin | 2 | 6 | 19 | 21 | 23 | 24 | 26 | 29 | 31 | 32 | not used |
 
 1. On the Jetson, turn on spi1 from jetson-io's menu: run `sudo /opt/nvidia/jetson-io/jetson-io.py`, choose Configure Jetson 40pin Header, then Configure header pins manually. Tick spi1, then go Back, Save pin changes, and Save and reboot. Its command-line tool saves the setting without adding it to the boot entry, so use the menu.
-2. From the Mac, install with the screen on, then reboot the Jetson:
+2. Turn the screen on for the `specialist` group in `inventory.ini`, as `inventory.ini.sample` shows:
+
+```ini
+[specialist:vars]
+specialist_screen=true
+```
+
+3. From the Mac, install, then reboot the Jetson:
 
 ```bash
-~/Library/Python/3.9/bin/ansible-playbook -i inventory.ini install_specialist.yml -K -e specialist_screen=true --tags app,screen
+~/Library/Python/3.9/bin/ansible-playbook -i inventory.ini install_specialist.yml -K --tags app,screen
 ```
+
+With that line in the inventory the screen is on for every install, whatever its tags. `-e specialist_screen=true` on the command line does the same for one run, and is needed only when the inventory does not have the line. Without either, any install with the `boot` or `screen` tag rewrites the voice loop service with the screen off, because `specialist_screen` is off by default.
 
 The install does five things:
 - It stops if spi1 is off.
@@ -299,15 +338,25 @@ It ends in `READY`, or `NOT READY` with the problems listed above it. The voice 
 
 ## Power mode
 
-The role does not change the power mode, because switching can require a reboot. On the Orin Nano Super, `MAXN_SUPER` is mode 2:
+We run the Jetson in its 25 W mode. The role does not set the power mode, because switching can require a reboot, so set it by hand once on the Jetson. On the Orin Nano 8GB Super with JetPack 6.2, mode 1 is 25 W and mode 2 is `MAXN_SUPER`, but check the numbers on the device first. This shows the current mode:
 
 ```bash
-sudo nvpmodel -m 2
+sudo nvpmodel -q
 ```
 
+This lists every mode's number and name:
+
 ```bash
-sudo jetson_clocks
+grep POWER_MODEL /etc/nvpmodel.conf
 ```
+
+Then set the 25 W mode by its number, 1 if the list agrees:
+
+```bash
+sudo nvpmodel -m 1
+```
+
+The mode stays set across reboots. `sudo jetson_clocks` also fixes the clocks at the mode's highest speed, until the next reboot.
 
 ## Undo it
 
@@ -318,7 +367,7 @@ sudo systemctl disable --now specialist-voice bhashini_models specialist-boot-ch
 ```
 
 ```bash
-sudo rm -rf /opt/specialist /usr/local/bin/specialist-voice /usr/local/bin/specialist-boot-check /usr/local/bin/specialist-usb-power /etc/default/specialist /etc/udev/rules.d/99-specialist-devices.rules /etc/systemd/system/bhashini_models.service /etc/systemd/system/specialist-boot-check.service /etc/systemd/system/specialist-voice.service /etc/systemd/system/ollama.service.d/specialist.conf /etc/sudoers.d/specialist-poweroff
+sudo rm -rf /opt/specialist /usr/local/bin/specialist-voice /usr/local/bin/specialist-journeys /usr/local/bin/specialist-boot-check /usr/local/bin/specialist-usb-power /etc/default/specialist /etc/udev/rules.d/99-specialist-devices.rules /etc/systemd/system/bhashini_models.service /etc/systemd/system/specialist-boot-check.service /etc/systemd/system/specialist-voice.service /etc/systemd/system/ollama.service.d/specialist.conf /etc/sudoers.d/specialist-poweroff
 ```
 
 Ollama and the system packages stay installed.

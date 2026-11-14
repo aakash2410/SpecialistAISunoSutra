@@ -14,10 +14,14 @@ real answer model (Qwen in Ollama), the real answer check and the real safety ch
     python3 -W ignore tests/journeys/run_journeys.py --lang en --out tests/journeys/report_mac_en.md
     python3 -W ignore tests/journeys/run_journeys.py --journey J3 --variant J3-en-a
 
-On the Jetson, where Bhashini runs, for the Hindi variants:
+On the Jetson, where Bhashini runs, for the Hindi variants. The install puts this file in
+/opt/specialist/app/tests/journeys and adds the specialist-journeys command, which runs it
+with the voice service's index, models, Ollama model and settings, but never with the
+switch-off permission or the screen. Stop the service first to free memory:
 
-    cd ~/specialist && PYTHONPATH=python:. /opt/specialist/venv/bin/python -W ignore \\
-        tests/journeys/run_journeys.py --lang hi --out ~/journeys_hi.md
+    sudo systemctl stop specialist-voice
+    specialist-journeys --lang hi --out ~/journeys_hi.md
+    sudo systemctl start specialist-voice
 
 A variant passes when every check on every turn passes. It fails when a turn marked
 "core" fails, since then the journey cannot go on as the user expects; otherwise it is
@@ -44,6 +48,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# The repo, or /opt/specialist/app on the device: both hold python/ and local/ here.
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, "python"))
 sys.path.insert(0, ROOT)

@@ -109,10 +109,10 @@ Honest status: it is not ready for classrooms. Answers can still be wrong, and t
 ## 7. Before you leave on Monday
 
 - [ ] Code frozen after the final reinstall. No edits after it.
-- [ ] Final reinstall from the Mac: `./scripts/make_module.sh`, then in `dist/specialist-module/ansible`: `ansible-playbook -i inventory.ini install_specialist.yml -K -e specialist_screen=true`. Use the full install, so the new Class 6 to 8 index and the misheard-word fix reach the Jetson. The code-only update (`--tags app,boot,verify`) leaves the index out, and without `-e specialist_screen=true` it rewrites the service with the screen off.
+- [ ] Final reinstall from the Mac: `./scripts/make_module.sh`, then in `dist/specialist-module/ansible`: `ansible-playbook -i inventory.ini install_specialist.yml -K`. Use the full install, so the new Class 6 to 8 index, the misheard-word fix and the journey runner reach the Jetson. A code-only update (`--tags app,boot,screen,verify`) leaves the index out. The inventory sets `specialist_screen=true`, so every install keeps the screen on without `-e`.
 - [ ] The install's own checks pass: a cited answer, the cricket refusal and a Hindi answer.
 - [ ] After a reboot: the boot check says `READY` and the screen says "Tap to ask".
-- [ ] Journey runner on the Jetson in English and Hindi, with the voice loop stopped (`sudo systemctl stop specialist-voice`). Write down pass or fail for each journey. Remove any demo turn that failed. Start the loop again with `sudo systemctl start specialist-voice`.
+- [ ] Journey runner on the Jetson in English and Hindi, with the voice loop stopped (`sudo systemctl stop specialist-voice`): `specialist-journeys --lang en --out ~/journeys_en.md`, then `specialist-journeys --lang hi --out ~/journeys_hi.md`. Write down pass or fail for each journey. Remove any demo turn that failed. Start the loop again with `sudo systemctl start specialist-voice`.
 - [ ] Full dry run of this script on the power bank, with the ETZIN cable reading 15.0 V. Time the cold boot and each turn, and note the battery left at the end.
 - [ ] Fill the Sunday gaps into this runbook: boot time, Jetson answer times, speaker volume, laptop link, the Hindi turn, the quiz wrong answer and "heat endaction".
 - [ ] Power bank charged to full. Pack list ticked.

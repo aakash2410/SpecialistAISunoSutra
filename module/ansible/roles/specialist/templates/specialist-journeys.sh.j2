@@ -1,0 +1,19 @@
+#!/bin/sh
+# Managed by the Specialist Ansible role. Runs the four scripted user journeys
+# (tests/journeys/run_journeys.py) with the same code, index, models, Ollama model and
+# hardware settings as the voice loop service, and writes a Markdown report.
+#   specialist-journeys --lang hi --out ~/journeys_hi.md
+#   specialist-journeys --lang en --journey J3 --variant J3-en-a
+set -a
+. /etc/default/specialist
+set +a
+# Never switch the device off from a journey run, whatever the environment says.
+unset SPECIALIST_ALLOW_POWEROFF
+# The runner loads every model again, so the voice service running alongside would
+# compete for memory. systemd sets INVOCATION_ID for a service.
+if [ -z "$INVOCATION_ID" ] && systemctl is-active --quiet specialist-voice 2>/dev/null; then
+    echo "Note: the voice loop service is running. To free memory for the run, stop it first:" >&2
+    echo "  sudo systemctl stop specialist-voice" >&2
+fi
+exec {{ specialist_venv }}/bin/python -W ignore {{ specialist_root }}/app/tests/journeys/run_journeys.py \
+    --ollama-model {{ specialist_llm_model }} "$@"

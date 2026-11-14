@@ -86,10 +86,18 @@ On the Mac, in English, with Ollama running (about 3 minutes on 11 November, lon
 python3 -W ignore tests/journeys/run_journeys.py --lang en --out tests/journeys/report_mac_en.md
 ```
 
-`--journey J3` or `--variant J3-en-a` runs part of it, and `--json` saves every turn. On the Jetson, in Hindi, after copying `python`, `tests` and `local` across (the rsync command above) and stopping the voice loop service:
+`--journey J3` or `--variant J3-en-a` runs part of it, and `--json` saves every turn. The install puts the runner and its scripts in `/opt/specialist/app/tests/journeys` and adds the `specialist-journeys` command, which runs it with the voice service's index, models, Ollama model and settings, but never with the switch-off permission or the screen. On the Jetson, in Hindi, stop the voice loop service to free memory, run the journeys, then start the service again:
 
 ```bash
-cd ~/specialist && PYTHONPATH=python:. /opt/specialist/venv/bin/python -W ignore tests/journeys/run_journeys.py --lang hi --out ~/journeys_hi.md
+sudo systemctl stop specialist-voice
+```
+
+```bash
+specialist-journeys --lang hi --out ~/journeys_hi.md
+```
+
+```bash
+sudo systemctl start specialist-voice
 ```
 
 `--lang en` works on the Jetson too. Hindi needs Bhashini, so the runner stops at once if it is not answering.

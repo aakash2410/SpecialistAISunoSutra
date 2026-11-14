@@ -145,7 +145,7 @@
   when: not specialist_ollama_unit.stat.exists
 
 # Memory settings (specialist_ollama_env). Also tagged boot, so the usual
-# --tags app,boot,verify update applies them.
+# --tags app,boot,screen,verify update applies them.
 - name: Create the Ollama settings folder
   tags: [ollama, boot]
   become: true
@@ -339,7 +339,7 @@
     creates: "{{ specialist_bhashini_dir }}/tts/flite/voices/cmu_indic_hin_ab.flitevox"
 
 # Also tagged boot, so a change to its memory settings applies with the usual
-# --tags app,boot,verify update. "Start Bhashini" below restarts it in a bhashini run,
+# --tags app,boot,screen,verify update. "Start Bhashini" below restarts it in a bhashini run,
 # and "Restart Bhashini with the new settings" in a boot run.
 - name: Install the Bhashini service
   tags: [bhashini, boot]
@@ -402,6 +402,8 @@
     virtualenv: "{{ specialist_venv }}"
     virtualenv_command: python3 -m venv
 
+# The code, plus the journey runner and its scripts in app/tests/journeys, laid out as in
+# the repo so the runner finds python/ and local/ next to it.
 - name: Install the pipeline code
   tags: [app]
   ansible.builtin.copy:
@@ -530,6 +532,16 @@
   ansible.builtin.template:
     src: specialist-voice.sh.j2
     dest: /usr/local/bin/specialist-voice
+    mode: "0755"
+
+# Runs the scripted user journeys with the service's settings, but never with the
+# switch-off permission or the screen: specialist-journeys --lang hi --out ~/journeys_hi.md
+- name: Install the journey runner command
+  tags: [app]
+  become: true
+  ansible.builtin.template:
+    src: specialist-journeys.sh.j2
+    dest: /usr/local/bin/specialist-journeys
     mode: "0755"
 
 # ------------------------------------------------------------------------ boot

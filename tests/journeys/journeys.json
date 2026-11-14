@@ -1,6 +1,6 @@
 {
   "source": "Honey, Tentative User Journey for Doosri Aawaz. Turns are typed, as if after speech recognition.",
-  "how_to_read": "Each turn has 'say' and 'expect'. Words in contains checks are never the topic's own name, which the device's fixed sentences repeat. expect keys: kind (one or a list of: lesson_plan, noted, asks_topic, revision, grade_not_covered, answer, refusal, safety, quiz_question, quiz_none, quiz_feedback, quiz_end, replay, nothing_to_repeat, reset), refused, contains_any / contains_all / not_contains (checked on the English text of the reply, case-insensitive), language (script of what is spoken and the answer language), min_sentences, has_example, cited, verdict (right, not_quite, cant_check), quiz_next (next, end), same_as_turn / differs_from_turn / example_differs_from_turn (turn numbers from 0). A turn marked core must pass for the journey to go on. Expected facts are only ones the Class 7 index supports.",
+  "how_to_read": "Each turn has 'say' and 'expect'. Words in contains checks are never the topic's own name, which the device's fixed sentences repeat. expect keys: kind (one or a list of: lesson_plan, noted, asks_topic, revision, grade_not_covered, answer, refusal, safety, quiz_question, quiz_none, quiz_feedback, quiz_end, replay, nothing_to_repeat, reset), refused, contains_any / contains_all / not_contains (checked on the English text of the reply, case-insensitive), language (script of what is spoken and the answer language), min_sentences, has_example, cited, verdict (right, not_quite, cant_check), quiz_next (next, end), same_as_turn / differs_from_turn / example_differs_from_turn (turn numbers from 0). A turn marked core must pass for the journey to go on. Expected facts are only ones the Class 6 to 8 science index supports.",
   "journeys": [
     {
       "id": "J1",
@@ -117,7 +117,7 @@
             {"say": "Revise acids with class 7 using different examples.", "core": true,
              "expect": {"kind": "revision", "refused": false, "contains_any": ["sour", "litmus"], "has_example": true}},
             {"say": "We just taught class 6 science, separation of substances. Revise it with them using different examples.", "core": true,
-             "why": "a class 6 chapter; the index on this machine is class 7",
+             "why": "a class 6 chapter, from the class 6 books in the Class 6 to 8 index",
              "expect": {"kind": "revision", "refused": false, "contains_any": ["sieving", "winnowing", "threshing", "handpicking", "filter", "sedimentation", "decantation", "evaporation"], "has_example": true}}
           ]
         },

@@ -3,9 +3,10 @@
 #
 #   ./scripts/make_module.sh [--tar]
 #
-# Produces dist/specialist-module/: the pipeline code, the e5 embedding model, the
-# answer verifier, the safety model, the language ID model, the baked DIKSHA indexes and the Ansible role. Bhashini and the CUDA
-# build of CTranslate2 are too large to ship here, so the role fetches them on the device.
+# Produces dist/specialist-module/: the pipeline code, the journey runner, the e5
+# embedding model, the answer verifier, the safety model, the language ID model, the baked
+# DIKSHA index and the Ansible role. Bhashini and the CUDA build of CTranslate2 are too
+# large to ship here, so the role fetches them on the device.
 # Re-run this after any code or corpus change.
 
 set -euo pipefail
@@ -54,6 +55,10 @@ done
 cp "$PKG/specialist/"*.py "$APP/specialist/"
 mkdir -p "$OUT/payload/app/local"
 cp "$ROOT/local/"*.py "$OUT/payload/app/local/"
+# The journey runner and its scripts, at the same place relative to python/ and local/ as
+# in the repo, so it runs unchanged on the device: specialist-journeys --lang hi
+mkdir -p "$OUT/payload/app/tests/journeys"
+cp "$ROOT/tests/journeys/run_journeys.py" "$ROOT/tests/journeys/journeys.json" "$OUT/payload/app/tests/journeys/"
 
 # --- models and tools --------------------------------------------------------
 # Only the files each loader reads, so nothing else in a model folder reaches the device.
