@@ -535,8 +535,15 @@ class SpecialistEngine:
         return None
 
     def say(self, text_en: str, target_language: str = "en", index: int = 0) -> SentenceResult:
-        """One of the device's own fixed sentences, translated and spoken like an answer."""
-        loc = self._localize_text(text_en, target_language)
+        """One of the device's own fixed sentences, translated and spoken like an answer.
+        Hindi uses the hand-written line where there is one (see fixed_hindi)."""
+        loc = None
+        if (target_language or "").lower() == "hi":
+            from .fixed_hindi import fixed_hindi   # here, not at the top: it imports quiz and friends
+
+            loc = fixed_hindi(text_en, lambda phrase: self._localize_text(phrase, "hi"))
+        if loc is None:
+            loc = self._localize_text(text_en, target_language)
         return SentenceResult(index, text_en, loc, self._synthesize(loc, target_language))
 
     def _localize_flag(self, flag, target_language: str) -> str:
