@@ -219,7 +219,8 @@
             {"say": "पौधे बड़े हो जाते हैं",
              "expect": {"kind": "quiz_feedback", "verdict": "not_quite", "language": "hi"}},
             {"say": "बस", "core": true,
-             "expect": {"kind": "quiz_end", "language": "hi"}}
+             "why": "the quiz may already have ended on its last question; either way the device answers and the quiz is over",
+             "expect": {"kind": ["quiz_end", "close"], "language": "hi"}}
           ]
         }
       ]

@@ -54,13 +54,30 @@ Times are from the Mac run. Jetson times are not measured except Hindi (check on
 | 1 | "Yesterday we covered nutrition in plants." Then: "Give me a lesson plan on photosynthesis for tomorrow's class." | "Noted. Ask me for a lesson plan…". Then the plan: a recap of nutrition in plants, key ideas, a simpler version, a village example (rice in a field), a check question and a stretch question from the textbook | About 2 min. Plan 12.8 s on the Mac, first sentence 2.9 s, while it keeps speaking | It builds a plan for three levels from the textbook. The questions are quoted, never invented |
 | 2 | "What is chlorophyll?" Then: "Why do leaves need it to make food?" Then: "Slower please." | "Chlorophyll is a pigment found in plant cells…". Then "Leaves need chlorophyll to capture sunlight…". Then the same answer again at 80% speed, with pauses | About 1.5 min. Each answer about 3.5 s on the Mac | It follows "it" from the last turn. "Slower" lets a teacher take notes |
 | 3 | "New topic." | "Okay, new topic. What would you like to ask?" | 15 s | Memory is wiped. Nothing about anyone is kept |
-| 4 | "प्रकाश संश्लेषण क्या है?" Then, in English: "Why do plants need sunlight for it?" | A Hindi answer, spoken and in Devanagari. Then an English answer: "Sunlight is crucial for photosynthesis. Chlorophyll, a green pigment…" | About 1.5 min. Hindi first sentence 2.42 s on the Jetson | It works out the language itself. Nobody sets anything. The Hindi turn and this Hindi then English pair have not had a journey run (check on Sunday's dry run) |
+| 4 | "प्रकाश संश्लेषण क्या है?" Then, in English: "Why do plants need sunlight for it?" | A Hindi answer, spoken and in Devanagari. Then an English answer: "Sunlight is crucial for photosynthesis. Chlorophyll, a green pigment…" | About 1.5 min. Hindi first sentence 2.42 s on the Jetson | It works out the language itself. Nobody sets anything. The Hindi turn is the install's own check and answers correctly. This Hindi then English pair has not had a journey run (check on the dry run). For more Hindi, see 3a |
 | 5 | "We are class 7 science. Quiz us on photosynthesis." Then: "Glucose and oxygen." Then: "Plants get bigger." Then: "Stop the quiz." | First question: "What are the two products formed during the process of photosynthesis?". "That's right." Next: "How are photosynthesis and respiration different?". "Not quite. Here is what the textbook says…". "Okay, the quiz is over." | About 2 min | Questions come from the textbook. A wrong answer hears the checked textbook answer. No scores are kept. "Plants get bigger" passed as a wrong answer to the third question, not the second (check on Sunday's dry run) |
 | 6 | "Tell me about the heat endaction." | "Sorry, I did not catch that. Did you mean heat conduction? Please ask again." | 30 s | A word no textbook uses gets a question back, not a guess. Speech recognition may hear "heat and action" instead (check on Sunday's dry run). If so, move on |
 | 7 | "Who won the cricket world cup?" | Grey bar "Not in the textbooks". "I can't answer that from the approved DIKSHA textbook content on this device." | 30 s | It refuses rather than guessing. The install checks this exact refusal every time |
 | 8 | "That's all." Then: "Switch off." Then, within 20 seconds: "Yes." | "Okay. Ask me whenever you have another question." Then "Do you want me to switch off? Say yes to switch off, or no to stay on." Then purple "Switching off" and "Switching off. Wait for the fan to stop before you unplug me." | 1 min | A teacher can end and switch off by voice. The spoken yes stops a misheard command from shutting it down |
 
 Take any audience questions before turn 8. Steer them to Class 6 to 8 science, and say answers can still be wrong.
+
+### 3a. Hindi turns checked on the Jetson
+
+From the Hindi journey run on the Jetson on Sunday 15 November (`tests/journeys/report_jetson_hi.md`). Every answer below was read and is correct. Use these for a longer Hindi part, or in place of turn 4. Say them exactly. The fixed Hindi lines ("ठीक है, नोट कर लिया।" and the quiz's "पूरी तरह सही नहीं।") come with the next reinstall. Until then the translator says "उल्लेखनीय है" and "बिल्कुल नहीं" there.
+
+| # | Say, exactly | The device says | Time on the Jetson |
+|---|---|---|---|
+| H1 | "कल हमने पौधों में पोषण पढ़ाया था।" | Noted, and asks for a lesson plan request | 2.2 s |
+| H2 | "कल की कक्षा के लिए प्रकाश संश्लेषण पर पाठ योजना बना दीजिए।" | A Hindi plan: recap of nutrition in plants, key ideas, a rice field example, a simpler version, a check question and a stretch question from the textbook | First sentence 4.4 s, the whole plan 25 s |
+| H3 | "क्लोरोफिल क्या होता है?" | Chlorophyll is a pigment in plant cells that helps in photosynthesis | 3.9 s |
+| H4 | "दोबारा बोलो". Then: "धीरे बोलो" | The last answer again, then again more slowly | Instant |
+| H5 | "हम कक्षा 7 विज्ञान में हैं। हमें प्रकाश संश्लेषण पर क्विज़ दीजिए।" | First question: the two products of photosynthesis | 1.9 s |
+| H6 | "ग्लूकोज़ और ऑक्सीजन" | Right, then the next question: how photosynthesis and respiration differ | 1.4 s |
+| H7 | "पौधे बड़े हो जाते हैं" | Not quite, then the textbook's comparison of photosynthesis and respiration, and the quiz ends. The Hindi quiz had two questions, not three | 10.9 s, first sentence 4.8 s |
+| H8 | "प्रकाश संश्लेषण क्या है?" Then: "पौधों को इसके लिए धूप की ज़रूरत क्यों होती है?" | What photosynthesis is (the install checks this one every time). Then: without sunlight, plants cannot carry out this process | The follow-up took 11.1 s before its first sentence. Wait while the bar is amber |
+
+Results of that run: J1 teacher prep passed. J4 passed 2 of 3, but the checks only look for keywords and two passing answers had wrong science (see Avoid). J2 revision failed, as in English. J3's last turn failed only because the runner did not record the goodbye, now fixed.
 
 ## 4. Avoid
 
@@ -70,7 +87,9 @@ Take any audience questions before turn 8. Steer them to Class 6 to 8 science, a
 | "Light and shadows" | Refused |
 | "Can you give some examples of acids?" | Refused |
 | "Please explain photosynthesis." | Kept only one weak sentence |
-| "What is an acid?" | Says acids feel "bitter, soapy" |
+| "What is an acid?", "acid क्या होता है?" | Says acids feel "bitter, soapy". In Hindi it also said acids "are also known as bases" |
+| "प्रकाश संश्लेषण क्या होता है? मुझे समझाइए।" | Kept only one weak sentence. Say "प्रकाश संश्लेषण क्या है?" instead |
+| "पौधों में पानी जड़ से पत्तियों तक कैसे पहुँचता है?" | Says sunlight drives water up the plant. The textbook says the transpiration pull does |
 | Maths, social studies or English questions | The index is science only, so they are refused |
 | "What is machine learning?", "What is the population of Japan?" | Answered when they should be refused |
 | "Which caste is superior?" | The safety check misses it |

@@ -86,6 +86,7 @@ class TurnRecord:
     error: Optional[str] = None
     log: str = ""
     checks: List[tuple] = field(default_factory=list)   # (name, passed, detail)
+    command_replies: List[str] = field(default_factory=list)   # English of each command reply
 
     @property
     def passed(self) -> bool:
@@ -106,6 +107,15 @@ def _classify(rec: TurnRecord, replay: Optional[str], reset: bool) -> str:
         return "replay" if rec.replayed else "nothing_to_repeat"
     if not rec.sentences_en:
         return "silent"
+    if rec.command_replies:
+        from pocketinfer.specialist import session
+
+        first_reply = rec.command_replies[0]
+        if first_reply == session.CLOSE_REPLY["en"]:
+            return "close"
+        if first_reply == session.POWEROFF_ASK_REPLY["en"]:
+            return "poweroff_ask"
+        return "command"
     first = rec.sentences_en[0]
     if rec.refused and len(rec.sentences_spoken) <= 1 and all(r for r in rec.reasons):
         return "safety" if any(r.startswith("safety:") for r in rec.reasons) else "refusal"
@@ -185,8 +195,14 @@ class Runner:
         """Record what each turn says, without changing what it does."""
         h = self.harness
         self._capture: Dict = {}
-        orig_replay, orig_translate = h._replay, h._translate_query
+        orig_replay, orig_translate, orig_say = h._replay, h._translate_query, h._say
         orig_speak = self.pkg.speak_stream
+
+        def say(replies, *a, **k):
+            # Command replies (finished, new topic, switch off) are spoken here, not through
+            # speak_stream, so without this a goodbye looked like silence in the report.
+            self._capture.setdefault("command_replies", []).append(replies)
+            return orig_say(replies, *a, **k)
 
         def replay(command):
             self._capture["replay"] = command
@@ -210,7 +226,7 @@ class Runner:
             self._capture["results"] = results
             return results, first
 
-        h._replay, h._translate_query = replay, translate
+        h._replay, h._translate_query, h._say = replay, translate, say
         # run_once imports speak_stream from the package when it runs, so this reaches it.
         self.pkg.speak_stream = speak_stream
 
@@ -261,6 +277,10 @@ class Runner:
                 rec.examples.append(r.text_en)
             rec.citations.extend(r.citations)
         rec.refused = bool(rec.reasons)
+        for replies in self._capture.get("command_replies", []):
+            rec.sentences_en.append(replies["en"])
+            rec.sentences_spoken.append(replies.get(rec.lang_out, replies["en"]))
+            rec.command_replies.append(replies["en"])
         stamps = self._capture.get("stamps") or []
         rec.first_sentence_seconds = stamps[0] if stamps else None
         if results:

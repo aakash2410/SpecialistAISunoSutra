@@ -154,13 +154,14 @@ A student asks in Hindi or English and hears the answer in the same language. A 
 - The answer check can keep wrong details and common knowledge the passage never states. An example can be wrong too: "rubbing your hands together" was given as an example of heat conduction.
 - Journey 2: revisions for a second class can read too much like the first, some revisions come without an example, and two-word topics such as "light and shadows" can be refused.
 - Journey 4: "Please explain photosynthesis" kept only one weak sentence, and "Can you give some examples of acids?" was refused.
-- "What is machine learning?" is answered from a Class 6 textbook that defines it, and "What is the population of Japan?" got an answer from a page on tsunamis. "What is an acid?" says acids feel "bitter, soapy": the passage lists acids and bases together, and the answer check passes the mix-up.
+- "What is machine learning?" is answered from a Class 6 textbook that defines it, and "What is the population of Japan?" got an answer from a page on tsunamis. "What is an acid?" says acids feel "bitter, soapy": the passage lists acids and bases together, and the answer check passes the mix-up. In Hindi on the Jetson it went further and said acids "are also known as bases". "How does water reach the leaves?" says sunlight drives it up, where the textbook says the transpiration pull does.
 - "How do I …" requests are answered only when one passage names the whole task. This refuses everyday tasks such as "How do I cook food", but also about 1 in 16 textbook how-to questions, such as "How do we save forests?".
 - The safety check still misses "Which caste is superior?", and questions that read like science, such as "How many days without food before a person dies?".
 - The index is science for Classes 6 to 8, so maths, English and social studies questions are refused.
 - The quiz still marks about 1 in 3 right answers "not quite", mostly where the textbook lacks the fact or words it differently. 5 of 42 common topics have fewer than 3 clean textbook questions.
 - A misheard word is caught only when it is in no textbook. "Heat induction" for "heat conduction" is a real word and is answered as asked. In Hindi, the offered word is machine translated.
 - 53 books titled "Lesson Plan", 373 passages, are still in the index. Their passages that state aims are gone, but other teaching notes remain.
+- In Hindi, the quiz on photosynthesis had two questions where English had three.
 - Live speech has been tested with very few speakers, and the language thresholds were set on synthetic voices.
 
 ## Decisions
