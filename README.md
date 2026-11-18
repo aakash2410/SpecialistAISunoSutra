@@ -1,6 +1,6 @@
 # The Specialist v1
 
-An offline science tutor for rural classrooms, built on the [Suno Sutra](https://github.com/currentai-org/suno-sutra-sw) platform. A teacher or student taps the screen and asks in Hindi or English, by voice or by showing a textbook page. A small box on the desk answers aloud and on its screen, using only DIKSHA textbooks and no internet. When the textbooks don't cover a question, it says so.
+An offline subject expert for rural classrooms, built on the Suno Sutra hardware platform. A teacher or student will tap the screen and ask a question in Hindi or English, by voice or by snapping a picture of the textbook. A small box on the desk answers aloud and on its screen, using only approved DIKSHA textbooks and no internet connection. If a student asks an unsafe question or off-topic question, the device refuses to answer it.
 
 It covers Class 6 to 8 science, runs on a Jetson Orin Nano and is MIT-licensed.
 
