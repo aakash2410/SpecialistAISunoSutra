@@ -1,6 +1,6 @@
 # The Specialist v1
 
-An offline subject expert for rural classrooms, built on the Suno Sutra platform. A teacher or student taps the screen and asks a question in Hindi or English, by voice or from a textbook page. A small box on the desk answers aloud and on its screen, using only approved DIKSHA textbooks and no internet. When the textbooks don't cover a question, it says so.
+An offline subject expert for rural classrooms, built on the Suno Sutra hardware platform. A teacher or student will tap the screen and ask a question in Hindi or English, by voice or by snapping a picture of the textbook. A small box on the desk answers aloud and on its screen, using only approved DIKSHA textbooks and no internet connection. If a student asks an unsafe question or off-topic question, the device refuses to answer it. 
 
 ![The Specialist: one device, four classroom journeys](docs/system.png)
 
